@@ -1,0 +1,10 @@
+pyproject.toml
+src/askfind/__init__.py
+src/askfind/cli.py
+src/askfind.egg-info/PKG-INFO
+src/askfind.egg-info/SOURCES.txt
+src/askfind.egg-info/dependency_links.txt
+src/askfind.egg-info/entry_points.txt
+src/askfind.egg-info/requires.txt
+src/askfind.egg-info/top_level.txt
+tests/test_cli.py
