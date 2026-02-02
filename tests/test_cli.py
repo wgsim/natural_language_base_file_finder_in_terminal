@@ -1,6 +1,9 @@
 """Tests for CLI argument parsing and entry point."""
 
+from unittest.mock import patch, MagicMock
+
 from askfind.cli import build_parser, main
+from askfind.search.filters import SearchFilters
 
 
 class TestBuildParser:
@@ -27,7 +30,7 @@ class TestBuildParser:
     def test_max_results_default(self):
         parser = build_parser()
         args = parser.parse_args(["test"])
-        assert args.max_results == 50
+        assert args.max_results == 0  # 0 means use config value
 
     def test_verbose_flag(self):
         parser = build_parser()
@@ -50,10 +53,35 @@ class TestMain:
         result = main([])
         assert result == 2
 
-    def test_query_returns_0(self):
+    @patch("askfind.cli.get_api_key", return_value=None)
+    def test_query_returns_0(self, mock_get_key):
         result = main(["find python files"])
-        assert result == 0
+        assert result == 2  # Returns 2 when no API key
 
     def test_interactive_returns_0(self):
         result = main(["-i"])
         assert result == 0
+
+
+class TestMainIntegration:
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode(self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path):
+        # Setup test files
+        (tmp_path / "test.py").write_text("hello")
+        (tmp_path / "readme.md").write_text("# docs")
+
+        mock_config = MagicMock()
+        mock_config.base_url = "http://test"
+        mock_config.model = "test-model"
+        mock_config.max_results = 50
+        mock_config_cls.return_value = mock_config
+
+        mock_client = MagicMock()
+        mock_client.extract_filters.return_value = '{"ext": [".py"]}'
+        mock_llm_cls.return_value = mock_client
+
+        result = main(["python files", "--root", str(tmp_path)])
+        assert result == 0
+        mock_client.extract_filters.assert_called_once_with("python files")
