@@ -14,7 +14,7 @@ from askfind.config import Config, get_api_key
 from askfind.interactive.commands import copy_content, copy_path, open_in_editor, preview
 from askfind.llm.client import LLMClient
 from askfind.llm.parser import parse_llm_response
-from askfind.output.formatter import FileResult
+from askfind.output.formatter import FileResult, human_size
 from askfind.search.walker import walk_and_filter
 
 console = Console()
@@ -121,7 +121,7 @@ class InteractiveSession:
             table.add_column("date", style="dim", width=8)
 
             for i, r in enumerate(self.results, 1):
-                size_str = _human_size(r.size)
+                size_str = human_size(r.size)
                 date_str = r.modified.strftime("%b %d")
                 table.add_row(f"[{i}]", str(r.path), size_str, date_str)
 
@@ -131,11 +131,3 @@ class InteractiveSession:
             console.print(f"[red]Error: {e}[/red]")
 
 
-def _human_size(nbytes: int) -> str:
-    for unit in ("B", "KB", "MB", "GB"):
-        if nbytes < 1024:
-            if unit == "B":
-                return f"{nbytes} {unit}"
-            return f"{nbytes:.1f} {unit}"
-        nbytes /= 1024
-    return f"{nbytes:.1f} TB"

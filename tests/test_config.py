@@ -54,12 +54,12 @@ class TestConfig:
 
 class TestGetApiKey:
     def test_cli_flag_takes_priority(self):
-        key = get_api_key(cli_key="sk-cli", env_key=None)
+        key = get_api_key(cli_key="sk-cli")
         assert key == "sk-cli"
 
     @patch.dict(os.environ, {"ASKFIND_API_KEY": "sk-env"})
     def test_env_var_fallback(self):
-        key = get_api_key(cli_key=None, env_key=None)
+        key = get_api_key(cli_key=None)
         assert key == "sk-env"
 
     @patch("askfind.config.keyring")
@@ -68,7 +68,7 @@ class TestGetApiKey:
         with patch.dict(os.environ, {}, clear=True):
             # Remove ASKFIND_API_KEY if present
             os.environ.pop("ASKFIND_API_KEY", None)
-            key = get_api_key(cli_key=None, env_key=None)
+            key = get_api_key(cli_key=None)
         assert key == "sk-keychain"
 
     @patch("askfind.config.keyring")
@@ -76,5 +76,5 @@ class TestGetApiKey:
         mock_keyring.get_password.return_value = None
         with patch.dict(os.environ, {}, clear=True):
             os.environ.pop("ASKFIND_API_KEY", None)
-            key = get_api_key(cli_key=None, env_key=None)
+            key = get_api_key(cli_key=None)
         assert key is None

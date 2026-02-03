@@ -12,6 +12,7 @@ dependencies = [
     "rich>=13.0",
     "prompt-toolkit>=3.0",
     "keyring>=25.0",
+    "tomli-w>=1.0",
 ]
 
 [project.optional-dependencies]

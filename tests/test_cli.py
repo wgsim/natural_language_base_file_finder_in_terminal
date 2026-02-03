@@ -58,9 +58,18 @@ class TestMain:
         result = main(["find python files"])
         assert result == 2  # Returns 2 when no API key
 
-    def test_interactive_returns_0(self):
+    @patch("askfind.interactive.pane.spawn_interactive_pane", return_value=False)
+    @patch("askfind.interactive.session.InteractiveSession")
+    def test_interactive_returns_0(self, mock_session_cls, mock_spawn):
+        # Mock the InteractiveSession instance
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+
         result = main(["-i"])
         assert result == 0
+        # Verify spawn was called and session.run() was called
+        mock_spawn.assert_called_once()
+        mock_session.run.assert_called_once()
 
 
 class TestMainIntegration:
@@ -80,6 +89,9 @@ class TestMainIntegration:
 
         mock_client = MagicMock()
         mock_client.extract_filters.return_value = '{"ext": [".py"]}'
+        # Support context manager protocol for `with LLMClient(...) as client:`
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=None)
         mock_llm_cls.return_value = mock_client
 
         result = main(["python files", "--root", str(tmp_path)])
