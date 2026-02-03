@@ -158,6 +158,11 @@ def main(argv: list[str] | None = None) -> int:
         if not results:
             return 1
 
+        # Optional LLM re-ranking for semantic relevance
+        if not args.no_rerank and len(results) > 1:
+            from askfind.search.reranker import rerank_results
+            results = rerank_results(client, args.query, results)
+
         if args.json_output:
             print(format_json(results))
         elif args.verbose:
