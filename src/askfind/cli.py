@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import sys
 from pathlib import Path
+from urllib.parse import urlparse
+
+from dataclasses import fields
 
 from askfind.config import Config, get_api_key, get_config_path, set_api_key
 from askfind.llm.client import LLMClient
@@ -30,6 +34,39 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-rerank", action="store_true", help="Skip semantic re-ranking")
     parser.add_argument("--interactive-session", action="store_true", help=argparse.SUPPRESS)
     return parser
+
+
+def _validate_base_url(url: str) -> tuple[bool, str]:
+    """Validate base_url for SSRF protection.
+
+    Returns (is_valid, error_message).
+    """
+    try:
+        parsed = urlparse(url)
+
+        # Require HTTPS unless localhost
+        if parsed.scheme not in ("https", "http"):
+            return False, "URL must use http:// or https:// scheme"
+
+        if parsed.scheme == "http":
+            # Only allow HTTP for localhost/127.0.0.1
+            if parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+                return False, "HTTP is only allowed for localhost. Use HTTPS for remote servers."
+
+        # Block RFC 1918 private addresses and link-local
+        if parsed.hostname:
+            try:
+                ip = ipaddress.ip_address(parsed.hostname)
+                if ip.is_private or ip.is_link_local or ip.is_loopback:
+                    if parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+                        return False, f"Private/internal IP addresses are not allowed: {parsed.hostname}"
+            except ValueError:
+                # Not an IP address, it's a hostname - that's fine
+                pass
+
+        return True, ""
+    except Exception as e:
+        return False, f"Invalid URL format: {e}"
 
 
 def _build_config_parser() -> argparse.ArgumentParser:
@@ -70,9 +107,37 @@ def _handle_config(args) -> int:
         console.print(table)
         return 0
     if args.config_action == "set":
-        setattr(config, args.key, args.value)
+        # Validate config key against known fields
+        valid_keys = {f.name for f in fields(Config)}
+        if args.key not in valid_keys:
+            print(
+                f"Error: Unknown config key '{args.key}'. "
+                f"Valid keys: {', '.join(sorted(valid_keys))}",
+                file=sys.stderr
+            )
+            return 2
+
+        # Type validation and coercion
+        value = args.value
+
+        # Validate base_url for SSRF protection
+        if args.key == "base_url":
+            is_valid, error = _validate_base_url(value)
+            if not is_valid:
+                print(f"Error: {error}", file=sys.stderr)
+                return 2
+
+        # Coerce max_results to int
+        if args.key == "max_results":
+            try:
+                value = int(value)
+            except ValueError:
+                print(f"Error: '{args.key}' must be an integer.", file=sys.stderr)
+                return 2
+
+        setattr(config, args.key, value)
         config.save(get_config_path())
-        print(f"Set {args.key} = {args.value}")
+        print(f"Set {args.key} = {value}")
         return 0
     if args.config_action == "set-key":
         from getpass import getpass
@@ -96,23 +161,32 @@ def _handle_config(args) -> int:
             models = resp.json().get("data", [])
             for m in models:
                 print(m.get("id", "unknown"))
+        except httpx.HTTPStatusError as e:
+            print(f"Error: API returned HTTP {e.response.status_code}", file=sys.stderr)
+            return 3
+        except (httpx.ConnectError, httpx.TimeoutException):
+            print(f"Error: Cannot connect to API server at {config.base_url}", file=sys.stderr)
+            return 3
         except Exception as e:
-            print(f"Error fetching models: {e}", file=sys.stderr)
+            print(f"Error: {type(e).__name__}", file=sys.stderr)
             return 3
         return 0
     return 2
 
 
 def main(argv: list[str] | None = None) -> int:
+    # Get actual argv - if None, use sys.argv[1:]
+    raw_argv = argv if argv is not None else sys.argv[1:]
+
     # Check if first arg is "config" subcommand
-    if argv and len(argv) > 0 and argv[0] == "config":
+    if raw_argv and len(raw_argv) > 0 and raw_argv[0] == "config":
         config_parser = _build_config_parser()
-        args = config_parser.parse_args(argv[1:])  # Skip "config" word
+        args = config_parser.parse_args(raw_argv[1:])  # Skip "config" word
         return _handle_config(args)
 
     # Otherwise parse as search/interactive command
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(raw_argv)
 
     if not args.query and not args.interactive and not args.interactive_session:
         parser.print_help()
@@ -139,6 +213,14 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # Single command mode
+    # Warn if API key is passed via CLI (visible in process list)
+    if args.api_key:
+        print(
+            "Warning: --api-key exposes your key in process list and shell history. "
+            "Use ASKFIND_API_KEY env var or `askfind config set-key` instead.",
+            file=sys.stderr
+        )
+
     api_key = get_api_key(cli_key=args.api_key)
     if not api_key:
         print("Error: No API key configured. Run `askfind config set-key`.", file=sys.stderr)
@@ -147,34 +229,56 @@ def main(argv: list[str] | None = None) -> int:
     model = args.model or config.model
     max_results = args.max_results or config.max_results
 
-    client = LLMClient(base_url=config.base_url, api_key=api_key, model=model)
     try:
-        raw_response = client.extract_filters(args.query)
-        filters = parse_llm_response(raw_response)
-        root = Path(args.root).resolve()
-        paths = list(walk_and_filter(root, filters, max_results=max_results))
-        results = [FileResult.from_path(p) for p in paths]
+        with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
+            raw_response = client.extract_filters(args.query)
+            filters = parse_llm_response(raw_response)
+            root = Path(args.root).resolve()
+            paths = list(walk_and_filter(root, filters, max_results=max_results))
+            results = [FileResult.from_path(p) for p in paths]
 
-        if not results:
-            return 1
+            if not results:
+                return 1
 
-        # Optional LLM re-ranking for semantic relevance
-        if not args.no_rerank and len(results) > 1:
-            from askfind.search.reranker import rerank_results
-            results = rerank_results(client, args.query, results)
+            # Optional LLM re-ranking for semantic relevance
+            if not args.no_rerank and len(results) > 1:
+                from askfind.search.reranker import rerank_results
+                results = rerank_results(client, args.query, results)
 
-        if args.json_output:
-            print(format_json(results))
-        elif args.verbose:
-            print(format_verbose(results))
-        else:
-            print(format_plain(results))
-        return 0
-    except Exception as e:
-        print(f"Error: {e}", file=sys.stderr)
+            if args.json_output:
+                print(format_json(results))
+            elif args.verbose:
+                print(format_verbose(results))
+            else:
+                print(format_plain(results))
+            return 0
+    except KeyboardInterrupt:
+        print("\nSearch cancelled.", file=sys.stderr)
+        return 130
+    except FileNotFoundError as e:
+        print(f"Error: Search root not found: {args.root}", file=sys.stderr)
         return 3
-    finally:
-        client.close()
+    except PermissionError as e:
+        print(f"Error: Permission denied accessing search root", file=sys.stderr)
+        return 3
+    except Exception as e:
+        import httpx
+        import json as json_module
+
+        # Provide sanitized error messages for common error types
+        if isinstance(e, httpx.HTTPStatusError):
+            print(f"Error: API request failed (HTTP {e.response.status_code})", file=sys.stderr)
+            return 3
+        elif isinstance(e, (httpx.ConnectError, httpx.TimeoutException)):
+            print(f"Error: Cannot connect to API server. Check your network and base_url config.", file=sys.stderr)
+            return 3
+        elif isinstance(e, json_module.JSONDecodeError):
+            print(f"Error: Invalid response from LLM API", file=sys.stderr)
+            return 3
+        else:
+            # For unexpected errors, show type but not full details
+            print(f"Error: {type(e).__name__}: {str(e)[:100]}", file=sys.stderr)
+            return 3
 
 
 if __name__ == "__main__":

@@ -15,17 +15,11 @@ FILTER_SCHEMA = """\
   "regex": "pattern",    // regex on filename
   "fuzzy": "confg",      // fuzzy match on filename
   "mod": ">7d",          // modified within (d=days, h=hours, m=minutes, w=weeks)
-  "cre": ">1d",          // created within
-  "acc": ">3d",          // accessed within
-  "newer": "file.py",    // newer than reference file
   "size": ">1MB",        // size (KB, MB, GB)
-  "lines": ">100",       // line count
   "has": ["TODO"],       // file content contains all terms
   "type": "file",        // file, dir, link
-  "cat": "python",       // category: python, javascript, image, binary, text...
   "depth": "<5",         // directory depth
-  "perm": "x",           // permissions: r, w, x
-  "owner": "root"        // file owner
+  "perm": "x"            // permissions: r, w, x
 }\
 """
 
