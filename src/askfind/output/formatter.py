@@ -35,8 +35,8 @@ def format_verbose(results: list[FileResult]) -> str:
         return ""
     lines = []
     for r in results:
-        size_str = _human_size(r.size)
-        date_str = r.modified.strftime("%b %d")
+        size_str = human_size(r.size)
+        date_str = r.modified.strftime("%b %d %Y")
         lines.append(f"{r.path}  {size_str}  {date_str}")
     return "\n".join(lines)
 
@@ -53,7 +53,8 @@ def format_json(results: list[FileResult]) -> str:
     return json.dumps(data, indent=2)
 
 
-def _human_size(nbytes: int) -> str:
+def human_size(nbytes: int | float) -> str:
+    """Convert bytes to human-readable size string."""
     for unit in ("B", "KB", "MB", "GB", "TB"):
         if nbytes < 1024:
             if unit == "B":

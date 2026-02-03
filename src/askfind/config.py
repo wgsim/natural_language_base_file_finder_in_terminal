@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import os
 import tomllib
-from dataclasses import dataclass, fields
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
 import keyring
+import tomli_w
 
 
 SERVICE_NAME = "askfind"
@@ -51,27 +52,44 @@ class Config:
         return cls(**kwargs)
 
     def save(self, path: Path) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        lines = [
-            "[provider]",
-            f'base_url = "{self.base_url}"',
-            f'model = "{self.model}"',
-            "",
-            "[search]",
-            f'default_root = "{self.default_root}"',
-            f"max_results = {self.max_results}",
-            "",
-            "[interactive]",
-            f'editor = "{self.editor}"',
-            "",
-        ]
-        path.write_text("\n".join(lines))
+        # Create config directory with restrictive permissions (700)
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+        # Use tomli_w for safe TOML serialization
+        config_dict = {
+            "provider": {
+                "base_url": self.base_url,
+                "model": self.model,
+            },
+            "search": {
+                "default_root": self.default_root,
+                "max_results": self.max_results,
+            },
+            "interactive": {
+                "editor": self.editor,
+            },
+        }
+
+        with open(path, "wb") as f:
+            tomli_w.dump(config_dict, f)
+
+        # Set restrictive file permissions (600 - owner read/write only)
+        path.chmod(0o600)
 
 
-def get_api_key(cli_key: str | None = None, env_key: str | None = None) -> str | None:
+def get_api_key(cli_key: str | None = None, env_var: str = "ASKFIND_API_KEY") -> str | None:
+    """Get API key from CLI arg, environment variable, or keyring (in that order).
+
+    Args:
+        cli_key: API key passed via CLI argument (highest priority)
+        env_var: Name of environment variable to check (default: ASKFIND_API_KEY)
+
+    Returns:
+        API key string or None if not found
+    """
     if cli_key:
         return cli_key
-    env_val = env_key or os.environ.get("ASKFIND_API_KEY")
+    env_val = os.environ.get(env_var)
     if env_val:
         return env_val
     return keyring.get_password(SERVICE_NAME, "api_key")

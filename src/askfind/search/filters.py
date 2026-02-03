@@ -9,6 +9,9 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
+# Maximum file size for content scanning (10 MB)
+MAX_CONTENT_SCAN_BYTES = 10 * 1024 * 1024
+
 
 def parse_size(s: str) -> int:
     s = s.strip().upper()
@@ -40,6 +43,29 @@ def _parse_constraint(s: str) -> tuple[str, str]:
 
 @dataclass
 class SearchFilters:
+    """Search filters extracted from natural language queries.
+
+    Implemented filters:
+    - ext, not_ext: File extension filtering
+    - name, not_name: Glob pattern matching on filename
+    - path, not_path: Path substring matching
+    - regex: Regex matching on filename
+    - fuzzy: Fuzzy subsequence matching on filename
+    - mod: Modification time constraints
+    - size: File size constraints
+    - has: Content matching (all terms must be present)
+    - type: File type (file, dir, link)
+    - depth: Directory depth constraints
+    - perm: Permission checks (r, w, x)
+
+    Future/unimplemented filters (removed to avoid confusion):
+    - cre: Creation time (not portable across filesystems)
+    - acc: Access time (often disabled for performance)
+    - newer: Newer than reference file
+    - lines: Line count
+    - cat: File category detection
+    - owner: File owner matching
+    """
     ext: list[str] | None = None
     not_ext: list[str] | None = None
     name: str | None = None
@@ -49,33 +75,50 @@ class SearchFilters:
     regex: str | None = None
     fuzzy: str | None = None
     mod: str | None = None
-    cre: str | None = None
-    acc: str | None = None
-    newer: str | None = None
     size: str | None = None
-    lines: str | None = None
     has: list[str] | None = None
     type: str | None = None
-    cat: str | None = None
     depth: str | None = None
     perm: str | None = None
-    owner: str | None = None
+    _compiled_regex: re.Pattern | None = field(default=None, init=False, repr=False)
+    _ext_lower: frozenset[str] | None = field(default=None, init=False, repr=False)
+    _not_ext_lower: frozenset[str] | None = field(default=None, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        """Pre-compile regex and normalize extension sets for performance and safety."""
+        # Pre-compile regex pattern with error handling to prevent ReDoS
+        if self.regex:
+            try:
+                self._compiled_regex = re.compile(self.regex)
+            except re.error:
+                # Invalid regex from LLM - treat as no regex filter
+                self._compiled_regex = None
+                self.regex = None
+
+        # Pre-compute lowercase extension sets for performance
+        if self.ext:
+            self._ext_lower = frozenset(e.lower() for e in self.ext)
+        if self.not_ext:
+            self._not_ext_lower = frozenset(e.lower() for e in self.not_ext)
 
     def matches_name(self, filename: str) -> bool:
-        if self.ext is not None:
+        # Use pre-computed extension sets for better performance
+        if self._ext_lower is not None:
             _, file_ext = os.path.splitext(filename)
-            if file_ext.lower() not in [e.lower() for e in self.ext]:
+            if file_ext.lower() not in self._ext_lower:
                 return False
-        if self.not_ext is not None:
+        if self._not_ext_lower is not None:
             _, file_ext = os.path.splitext(filename)
-            if file_ext.lower() in [e.lower() for e in self.not_ext]:
+            if file_ext.lower() in self._not_ext_lower:
                 return False
         if self.name and not fnmatch.fnmatch(filename, self.name):
             return False
         if self.not_name and fnmatch.fnmatch(filename, self.not_name):
             return False
-        if self.regex and not re.search(self.regex, filename):
-            return False
+        # Use pre-compiled regex to prevent ReDoS and handle invalid patterns
+        if self._compiled_regex is not None:
+            if not self._compiled_regex.search(filename):
+                return False
         if self.fuzzy:
             if not _fuzzy_match(self.fuzzy.lower(), filename.lower()):
                 return False
@@ -141,6 +184,13 @@ class SearchFilters:
         if not self.has:
             return True
         try:
+            # Skip symlinks to prevent reading files outside search root
+            if filepath.is_symlink():
+                return False
+            # Check file size to prevent OOM on large files
+            file_size = filepath.stat().st_size
+            if file_size > MAX_CONTENT_SCAN_BYTES:
+                return False
             text = filepath.read_text(errors="ignore")
             return all(term in text for term in self.has)
         except (OSError, UnicodeDecodeError):

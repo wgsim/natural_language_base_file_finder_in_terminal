@@ -18,6 +18,7 @@ class LLMClient:
             base_url=self.base_url,
             headers={"Authorization": f"Bearer {api_key}"},
             timeout=30.0,
+            verify=True,  # Explicitly verify TLS certificates
         )
 
     def extract_filters(self, query: str) -> str:
@@ -63,3 +64,11 @@ class LLMClient:
 
     def close(self) -> None:
         self._http.close()
+
+    def __enter__(self) -> LLMClient:
+        """Support context manager protocol."""
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        """Ensure HTTP client is closed when exiting context."""
+        self.close()
