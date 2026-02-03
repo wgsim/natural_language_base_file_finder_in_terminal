@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Override LLM model")
     parser.add_argument("--api-key", help="One-off API key")
     parser.add_argument("--no-rerank", action="store_true", help="Skip semantic re-ranking")
+    parser.add_argument("--interactive-session", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -113,15 +114,28 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    if not args.query and not args.interactive:
+    if not args.query and not args.interactive and not args.interactive_session:
         parser.print_help()
         return 2
 
     config = Config.from_file(get_config_path())
 
+    # Handle --interactive-session (spawned pane)
+    if args.interactive_session:
+        from askfind.interactive.session import InteractiveSession
+        session = InteractiveSession(config, Path(args.root))
+        session.run()
+        return 0
+
+    # Handle -i/--interactive (spawn pane or run inline)
     if args.interactive:
-        # Will be implemented in Task 9
-        print("Interactive mode not yet implemented.", file=sys.stderr)
+        from askfind.interactive.pane import spawn_interactive_pane
+        if spawn_interactive_pane():
+            return 0  # Pane was spawned, exit this process
+        # Fallback: run inline
+        from askfind.interactive.session import InteractiveSession
+        session = InteractiveSession(config, Path(args.root))
+        session.run()
         return 0
 
     # Single command mode
