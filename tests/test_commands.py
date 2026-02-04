@@ -79,3 +79,13 @@ def test_preview_reports_line_limit(tmp_path, capsys):
     preview(result)
     captured = capsys.readouterr()
     assert "more lines" in captured.out
+
+
+def test_copy_and_preview_binary_message_consistent(tmp_path, capsys):
+    f = tmp_path / "bin.dat"
+    f.write_bytes(b"\x00\xff")
+    result = FileResult.from_path(f)
+    copy_content(result)
+    preview(result)
+    out = capsys.readouterr().out
+    assert out.count("Skipping binary file") == 2
