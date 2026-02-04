@@ -36,3 +36,27 @@ def test_copy_content_skips_binary(tmp_path, capsys):
         mocked.assert_not_called()
     captured = capsys.readouterr()
     assert "binary" in captured.out.lower()
+
+
+def test_copy_content_uses_wl_copy_when_available(tmp_path):
+    f = tmp_path / "note.txt"
+    f.write_text("hello")
+    result = FileResult.from_path(f)
+    with patch("askfind.interactive.commands.sys.platform", "linux"):
+        with patch("askfind.interactive.commands.shutil.which", return_value="/usr/bin/wl-copy"):
+            with patch("askfind.interactive.commands.subprocess.run") as mocked:
+                copy_content(result)
+                assert mocked.called
+                args, kwargs = mocked.call_args
+                assert args[0] == ["/usr/bin/wl-copy"]
+
+
+def test_copy_content_reports_missing_clipboard_tool_on_windows(tmp_path, capsys):
+    f = tmp_path / "note.txt"
+    f.write_text("hello")
+    result = FileResult.from_path(f)
+    with patch("askfind.interactive.commands.sys.platform", "win32"):
+        with patch("askfind.interactive.commands.subprocess.run", side_effect=FileNotFoundError()):
+            copy_content(result)
+    captured = capsys.readouterr()
+    assert "Clipboard tool not found" in captured.out
