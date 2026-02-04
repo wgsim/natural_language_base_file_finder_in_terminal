@@ -160,6 +160,7 @@ def _handle_config(args) -> int:
             resp.raise_for_status()
             models = resp.json().get("data", [])
             provider = args.provider
+            printed = 0
             for m in models:
                 model_id = m.get("id", "unknown")
                 if provider:
@@ -167,6 +168,9 @@ def _handle_config(args) -> int:
                     if prefix != provider:
                         continue
                 print(model_id)
+                printed += 1
+            if provider and printed == 0:
+                print(f"No models found for provider '{provider}'", file=sys.stderr)
         except httpx.HTTPStatusError as e:
             print(f"Error: API returned HTTP {e.response.status_code}", file=sys.stderr)
             return 3
