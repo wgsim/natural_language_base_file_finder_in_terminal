@@ -90,3 +90,12 @@ class TestWalkAndFilter:
         filters = SearchFilters()
         results = list(walk_and_filter(tmp_path, filters, max_results=2))
         assert len(results) == 2
+
+    def test_depth_prunes_recursion(self, tmp_path):
+        _make_tree(tmp_path)
+        filters = SearchFilters(depth="<1")
+        results = list(walk_and_filter(tmp_path, filters))
+        names = {p.name for p in results}
+        assert "src" in names
+        assert "readme.md" in names
+        assert "login.py" not in names
