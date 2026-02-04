@@ -122,3 +122,17 @@ class TestSearchFilters:
         assert filters.matches_depth(2) is True
         assert filters.matches_depth(3) is False
         assert filters.matches_depth(5) is False
+
+    def test_invalid_size_does_not_raise(self, tmp_path):
+        f = tmp_path / "a.txt"
+        f.write_text("x")
+        stat = f.stat()
+        filters = SearchFilters(size=">not-a-size")
+        assert filters.matches_stat(stat) is True
+
+    def test_invalid_mod_does_not_raise(self, tmp_path):
+        f = tmp_path / "a.txt"
+        f.write_text("x")
+        stat = f.stat()
+        filters = SearchFilters(mod=">not-a-time")
+        assert filters.matches_stat(stat) is True
