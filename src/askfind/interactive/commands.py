@@ -109,6 +109,10 @@ def _copy_to_clipboard(text: str) -> bool:
         subprocess.run(["pbcopy"], input=text.encode(), check=True)
         return True
     elif sys.platform == "linux":
+        wl_copy = shutil.which("wl-copy")
+        if wl_copy:
+            subprocess.run([wl_copy], input=text.encode(), check=True)
+            return True
         try:
             subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
             return True
@@ -121,5 +125,9 @@ def _copy_to_clipboard(text: str) -> bool:
                 return False
     else:
         # Windows
-        subprocess.run(["clip"], input=text.encode(), check=True)
-        return True
+        try:
+            subprocess.run(["clip"], input=text.encode(), check=True)
+            return True
+        except FileNotFoundError:
+            console.print("[red]Clipboard tool not found (clip). Ensure clip.exe is available on PATH.[/red]")
+            return False
