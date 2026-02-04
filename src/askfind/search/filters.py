@@ -146,8 +146,12 @@ class SearchFilters:
     def matches_depth(self, depth: int) -> bool:
         if self.depth is None:
             return True
-        op, val = _parse_constraint(self.depth)
-        limit = int(val)
+        try:
+            op, val = _parse_constraint(self.depth)
+            limit = int(val)
+        except ValueError:
+            print(f"Warning: Invalid depth constraint '{self.depth}'", file=sys.stderr)
+            return True
         if op == "<":
             return depth < limit
         if op == ">":
@@ -186,6 +190,9 @@ class SearchFilters:
                 if op == "<" and mtime > cutoff:
                     return False
         if self.perm:
+            if any(c not in "rwx" for c in self.perm):
+                print(f"Warning: Invalid perm constraint '{self.perm}'", file=sys.stderr)
+                return True
             mode = stat.st_mode
             if "x" in self.perm and not (mode & 0o111):
                 return False
