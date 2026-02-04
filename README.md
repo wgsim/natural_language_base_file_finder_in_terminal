@@ -86,6 +86,11 @@ askfind> help               # Show all commands
 askfind> exit               # Quit
 ```
 
+Notes:
+- Binary files are skipped for `copy content` and `preview`.
+- Linux clipboard requires `xclip`/`xsel` or `wl-copy` (Wayland).
+- Windows clipboard requires `clip` available on PATH.
+
 ### Configuration
 
 ```bash
