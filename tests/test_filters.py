@@ -136,3 +136,21 @@ class TestSearchFilters:
         stat = f.stat()
         filters = SearchFilters(mod=">not-a-time")
         assert filters.matches_stat(stat) is True
+
+    def test_invalid_size_emits_warning(self, tmp_path, capsys):
+        f = tmp_path / "a.txt"
+        f.write_text("x")
+        stat = f.stat()
+        filters = SearchFilters(size=">-1MB")
+        assert filters.matches_stat(stat) is True
+        err = capsys.readouterr().err
+        assert "Invalid size" in err
+
+    def test_invalid_mod_emits_warning(self, tmp_path, capsys):
+        f = tmp_path / "a.txt"
+        f.write_text("x")
+        stat = f.stat()
+        filters = SearchFilters(mod="> 7 days")
+        assert filters.matches_stat(stat) is True
+        err = capsys.readouterr().err
+        assert "Invalid mod" in err
