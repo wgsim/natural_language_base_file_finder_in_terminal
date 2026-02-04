@@ -139,6 +139,8 @@ askfind understands these filter types:
 Time units: `m` (minutes), `h` (hours), `d` (days), `w` (weeks)
 Size units: `KB`, `MB`, `GB`, `TB`
 
+Depth notes: root is depth `0`. When a depth limit is exceeded, deeper directories are pruned.
+
 ## Examples
 
 ```bash
