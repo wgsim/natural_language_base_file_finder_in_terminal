@@ -13,3 +13,15 @@ def test_copy_content_handles_decode_error(tmp_path):
     with patch("askfind.interactive.commands._copy_to_clipboard") as mocked:
         copy_content(result)
         mocked.assert_called_once()
+
+
+def test_copy_content_reports_missing_clipboard_tool(tmp_path, capsys):
+    f = tmp_path / "note.txt"
+    f.write_text("hello")
+    result = FileResult.from_path(f)
+    with patch("askfind.interactive.commands.sys.platform", "linux"):
+        with patch("askfind.interactive.commands.subprocess.run", side_effect=FileNotFoundError()):
+            copy_content(result)
+    captured = capsys.readouterr()
+    assert "Install xclip or xsel" in captured.out
+    assert "Copied content of" not in captured.out
