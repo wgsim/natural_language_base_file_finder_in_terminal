@@ -21,7 +21,8 @@ MAX_PREVIEW_SIZE = 10 * 1024 * 1024
 
 def copy_path(result: FileResult) -> None:
     path_str = str(result.path)
-    _copy_to_clipboard(path_str)
+    if not _copy_to_clipboard(path_str):
+        return
     console.print(f"[green]Copied: {path_str}[/green]")
 
 
@@ -37,7 +38,8 @@ def copy_content(result: FileResult) -> None:
             console.print(f"[yellow]File too large ({file_size / 1024 / 1024:.1f} MB). Max: {MAX_CLIPBOARD_SIZE / 1024 / 1024:.0f} MB[/yellow]")
             return
         content = result.path.read_text(errors="replace")
-        _copy_to_clipboard(content)
+        if not _copy_to_clipboard(content):
+            return
         console.print(f"[green]Copied content of: {result.path.name}[/green]")
     except (OSError, UnicodeDecodeError) as e:
         console.print(f"[red]Error reading file: {e}[/red]")
@@ -87,18 +89,22 @@ def open_in_editor(result: FileResult, editor: str = "vim") -> None:
         console.print(f"[red]Error opening editor: {e}[/red]")
 
 
-def _copy_to_clipboard(text: str) -> None:
+def _copy_to_clipboard(text: str) -> bool:
     if sys.platform == "darwin":
         subprocess.run(["pbcopy"], input=text.encode(), check=True)
+        return True
     elif sys.platform == "linux":
         try:
             subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+            return True
         except FileNotFoundError:
             try:
                 subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)
+                return True
             except FileNotFoundError:
-                console.print("[red]Clipboard tool not found (xclip/xsel).[/red]")
-                return
+                console.print("[red]Clipboard tool not found (xclip/xsel). Install xclip or xsel to enable copy.[/red]")
+                return False
     else:
         # Windows
         subprocess.run(["clip"], input=text.encode(), check=True)
+        return True
