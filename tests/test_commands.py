@@ -3,6 +3,7 @@
 from unittest.mock import patch
 
 from askfind.interactive.commands import copy_content
+from askfind.interactive.commands import preview
 from askfind.output.formatter import FileResult
 
 
@@ -60,3 +61,21 @@ def test_copy_content_reports_missing_clipboard_tool_on_windows(tmp_path, capsys
             copy_content(result)
     captured = capsys.readouterr()
     assert "Clipboard tool not found" in captured.out
+
+
+def test_preview_skips_binary(tmp_path, capsys):
+    f = tmp_path / "bin.dat"
+    f.write_bytes(b"\x00\xff")
+    result = FileResult.from_path(f)
+    preview(result)
+    captured = capsys.readouterr()
+    assert "Skipping binary file" in captured.out
+
+
+def test_preview_reports_line_limit(tmp_path, capsys):
+    f = tmp_path / "many.txt"
+    f.write_text("\n".join(["x"] * 60))
+    result = FileResult.from_path(f)
+    preview(result)
+    captured = capsys.readouterr()
+    assert "more lines" in captured.out
