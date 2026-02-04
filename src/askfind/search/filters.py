@@ -155,21 +155,29 @@ class SearchFilters:
 
     def matches_stat(self, stat: os.stat_result) -> bool:
         if self.size:
-            op, val = _parse_constraint(self.size)
-            size_bytes = parse_size(val)
-            if op == ">" and stat.st_size <= size_bytes:
-                return False
-            if op == "<" and stat.st_size >= size_bytes:
-                return False
+            try:
+                op, val = _parse_constraint(self.size)
+                size_bytes = parse_size(val)
+            except ValueError:
+                size_bytes = None
+            if size_bytes is not None:
+                if op == ">" and stat.st_size <= size_bytes:
+                    return False
+                if op == "<" and stat.st_size >= size_bytes:
+                    return False
         if self.mod:
-            op, val = _parse_constraint(self.mod)
-            delta = parse_time_delta(val)
-            cutoff = datetime.now(timezone.utc) - delta
-            mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-            if op == ">" and mtime < cutoff:
-                return False
-            if op == "<" and mtime > cutoff:
-                return False
+            try:
+                op, val = _parse_constraint(self.mod)
+                delta = parse_time_delta(val)
+            except ValueError:
+                delta = None
+            if delta is not None:
+                cutoff = datetime.now(timezone.utc) - delta
+                mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+                if op == ">" and mtime < cutoff:
+                    return False
+                if op == "<" and mtime > cutoff:
+                    return False
         if self.perm:
             mode = stat.st_mode
             if "x" in self.perm and not (mode & 0o111):
