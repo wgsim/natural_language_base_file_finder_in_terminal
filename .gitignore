@@ -110,3 +110,6 @@ $RECYCLE.BIN/
 .askfind/
 mockup_generator.py
 docs/mockup_interactive_mode.png
+
+# Worktrees
+.worktrees/
