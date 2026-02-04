@@ -33,6 +33,7 @@
 - [ ] Code complexity filters (cyclomatic complexity, LOC)
 - [ ] Language detection and filtering
 - [ ] License detection and filtering
+- [ ] Stricter parsing/validation for filter values (size/mod/depth)
 
 ### v0.3.0 - Advanced Features
 
@@ -54,6 +55,7 @@
 - [ ] Vim-style keybindings
 - [ ] Search result filtering and refinement
 - [ ] Export search results to file
+- [ ] Clipboard backend abstraction (wl-copy/xclip/xsel/clip)
 
 #### Integration Features
 - [ ] VS Code extension
@@ -110,6 +112,7 @@
 - API documentation for extensions
 - Architecture decision records (ADRs)
 - Performance tuning guide
+- Depth semantics documentation and edge cases
 
 ### Medium Priority
 
