@@ -96,6 +96,17 @@ class TestMain:
         assert "anthropic/claude-3.5" not in out
 
 
+@patch("askfind.cli.get_api_key", return_value="sk-test")
+@patch("httpx.get")
+def test_config_models_provider_no_match(mock_get, mock_key, capsys):
+    mock_get.return_value.json.return_value = {"data": [{"id": "openai/gpt-4o"}]}
+    mock_get.return_value.raise_for_status.return_value = None
+    result = main(["config", "models", "--provider", "anthropic"])
+    assert result == 0
+    err = capsys.readouterr().err
+    assert "No models found" in err
+
+
 class TestMainIntegration:
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")
