@@ -19,6 +19,15 @@ MAX_CLIPBOARD_SIZE = 1 * 1024 * 1024
 MAX_PREVIEW_SIZE = 10 * 1024 * 1024
 
 
+def _is_binary(path: Path) -> bool:
+    try:
+        with path.open("rb") as f:
+            chunk = f.read(1024)
+    except OSError:
+        return False
+    return b"\x00" in chunk
+
+
 def copy_path(result: FileResult) -> None:
     path_str = str(result.path)
     if not _copy_to_clipboard(path_str):
@@ -36,6 +45,9 @@ def copy_content(result: FileResult) -> None:
         file_size = result.path.stat().st_size
         if file_size > MAX_CLIPBOARD_SIZE:
             console.print(f"[yellow]File too large ({file_size / 1024 / 1024:.1f} MB). Max: {MAX_CLIPBOARD_SIZE / 1024 / 1024:.0f} MB[/yellow]")
+            return
+        if _is_binary(result.path):
+            console.print(f"[yellow]Skipping binary file: {result.path}[/yellow]")
             return
         content = result.path.read_text(errors="replace")
         if not _copy_to_clipboard(content):
@@ -55,6 +67,9 @@ def preview(result: FileResult) -> None:
         file_size = result.path.stat().st_size
         if file_size > MAX_PREVIEW_SIZE:
             console.print(f"[yellow]File too large ({file_size / 1024 / 1024:.1f} MB). Max: {MAX_PREVIEW_SIZE / 1024 / 1024:.0f} MB[/yellow]")
+            return
+        if _is_binary(result.path):
+            console.print(f"[yellow]Skipping binary file: {result.path}[/yellow]")
             return
         content = result.path.read_text(errors="replace")
         # Show first 50 lines
