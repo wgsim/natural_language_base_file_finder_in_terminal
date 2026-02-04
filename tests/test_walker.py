@@ -99,3 +99,12 @@ class TestWalkAndFilter:
         assert "src" in names
         assert "readme.md" in names
         assert "login.py" not in names
+
+    def test_depth_zero_matches_root_only(self, tmp_path):
+        _make_tree(tmp_path)
+        filters = SearchFilters(depth="0")
+        results = list(walk_and_filter(tmp_path, filters))
+        names = {p.name for p in results}
+        assert "readme.md" in names
+        assert "src" in names
+        assert "login.py" not in names
