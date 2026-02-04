@@ -36,10 +36,10 @@ def copy_content(result: FileResult) -> None:
         if file_size > MAX_CLIPBOARD_SIZE:
             console.print(f"[yellow]File too large ({file_size / 1024 / 1024:.1f} MB). Max: {MAX_CLIPBOARD_SIZE / 1024 / 1024:.0f} MB[/yellow]")
             return
-        content = result.path.read_text()
+        content = result.path.read_text(errors="replace")
         _copy_to_clipboard(content)
         console.print(f"[green]Copied content of: {result.path.name}[/green]")
-    except OSError as e:
+    except (OSError, UnicodeDecodeError) as e:
         console.print(f"[red]Error reading file: {e}[/red]")
 
 
@@ -94,7 +94,11 @@ def _copy_to_clipboard(text: str) -> None:
         try:
             subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
         except FileNotFoundError:
-            subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)
+            try:
+                subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)
+            except FileNotFoundError:
+                console.print("[red]Clipboard tool not found (xclip/xsel).[/red]")
+                return
     else:
         # Windows
         subprocess.run(["clip"], input=text.encode(), check=True)
