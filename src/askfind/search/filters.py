@@ -5,6 +5,7 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -157,8 +158,11 @@ class SearchFilters:
         if self.size:
             try:
                 op, val = _parse_constraint(self.size)
+                if val.strip().startswith("-"):
+                    raise ValueError("negative size")
                 size_bytes = parse_size(val)
             except ValueError:
+                print(f"Warning: Invalid size constraint '{self.size}'", file=sys.stderr)
                 size_bytes = None
             if size_bytes is not None:
                 if op == ">" and stat.st_size <= size_bytes:
@@ -168,8 +172,11 @@ class SearchFilters:
         if self.mod:
             try:
                 op, val = _parse_constraint(self.mod)
+                if val.strip().startswith("-"):
+                    raise ValueError("negative mod")
                 delta = parse_time_delta(val)
             except ValueError:
+                print(f"Warning: Invalid mod constraint '{self.mod}'", file=sys.stderr)
                 delta = None
             if delta is not None:
                 cutoff = datetime.now(timezone.utc) - delta
