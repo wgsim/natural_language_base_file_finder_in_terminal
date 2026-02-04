@@ -154,3 +154,18 @@ class TestSearchFilters:
         assert filters.matches_stat(stat) is True
         err = capsys.readouterr().err
         assert "Invalid mod" in err
+
+    def test_invalid_perm_emits_warning(self, tmp_path, capsys):
+        f = tmp_path / "a.txt"
+        f.write_text("x")
+        stat = f.stat()
+        filters = SearchFilters(perm="z")
+        assert filters.matches_stat(stat) is True
+        err = capsys.readouterr().err
+        assert "Invalid perm" in err
+
+    def test_invalid_depth_emits_warning(self, capsys):
+        filters = SearchFilters(depth="=x")
+        assert filters.matches_depth(0) is True
+        err = capsys.readouterr().err
+        assert "Invalid depth" in err
