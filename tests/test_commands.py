@@ -25,3 +25,14 @@ def test_copy_content_reports_missing_clipboard_tool(tmp_path, capsys):
     captured = capsys.readouterr()
     assert "Install xclip or xsel" in captured.out
     assert "Copied content of" not in captured.out
+
+
+def test_copy_content_skips_binary(tmp_path, capsys):
+    f = tmp_path / "bin.dat"
+    f.write_bytes(b"\x00\xff\x00\xff")
+    result = FileResult.from_path(f)
+    with patch("askfind.interactive.commands._copy_to_clipboard") as mocked:
+        copy_content(result)
+        mocked.assert_not_called()
+    captured = capsys.readouterr()
+    assert "binary" in captured.out.lower()
