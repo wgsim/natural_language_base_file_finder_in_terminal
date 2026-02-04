@@ -10,6 +10,11 @@
 
 All planned features for v0.1.0 have been implemented and tested.
 
+### Recent Robustness Updates (2026-02-04)
+- Depth-based recursion pruning aligned with depth filter behavior
+- Invalid size/mod constraints are ignored instead of raising
+- Interactive clipboard operations are more resilient (binary skip, tool guidance)
+
 ### Timeline
 - **Start Date**: 2026-02-02
 - **Completion Date**: 2026-02-02
