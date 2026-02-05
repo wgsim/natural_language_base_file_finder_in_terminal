@@ -58,3 +58,9 @@ class TestParseLlmResponse:
         raw = '{"ext": ".py"}'
         filters = parse_llm_response(raw)
         assert filters.ext == [".py"]
+
+    def test_parse_llm_response_with_errors(self):
+        raw = "not json"
+        filters, errors = parse_llm_response(raw, return_errors=True)
+        assert isinstance(filters, SearchFilters)
+        assert errors

@@ -62,21 +62,28 @@ def _validate_and_sanitize_value(key: str, value: any) -> any | None:
     return None
 
 
-def parse_llm_response(raw: str) -> SearchFilters:
+def parse_llm_response(raw: str, return_errors: bool = False) -> SearchFilters | tuple[SearchFilters, list[str]]:
     """Parse a raw LLM response string into SearchFilters.
 
     Handles JSON wrapped in markdown code blocks or surrounding text.
     Returns empty SearchFilters on parse failure.
     """
+    errors: list[str] = []
     json_str = _extract_json(raw)
     if json_str is None:
-        return SearchFilters()
+        errors.append("No JSON object found in LLM response.")
+        filters = SearchFilters()
+        return (filters, errors) if return_errors else filters
     try:
         data = json.loads(json_str)
-    except json.JSONDecodeError:
-        return SearchFilters()
+    except json.JSONDecodeError as exc:
+        errors.append(f"Invalid JSON: {exc}")
+        filters = SearchFilters()
+        return (filters, errors) if return_errors else filters
     if not isinstance(data, dict):
-        return SearchFilters()
+        errors.append("JSON root must be an object.")
+        filters = SearchFilters()
+        return (filters, errors) if return_errors else filters
     valid_names = {f.name for f in fields(SearchFilters)}
     kwargs = {}
     for key, value in data.items():
@@ -86,7 +93,8 @@ def parse_llm_response(raw: str) -> SearchFilters:
         sanitized = _validate_and_sanitize_value(key, value)
         if sanitized is not None:
             kwargs[key] = sanitized
-    return SearchFilters(**kwargs)
+    filters = SearchFilters(**kwargs)
+    return (filters, errors) if return_errors else filters
 
 
 def _extract_json(raw: str) -> str | None:
