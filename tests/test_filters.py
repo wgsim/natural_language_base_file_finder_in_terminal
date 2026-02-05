@@ -23,6 +23,9 @@ class TestParseSize:
     def test_case_insensitive(self):
         assert parse_size("1kb") == 1024
 
+    def test_size_parsing_allows_spaces_and_case(self):
+        assert parse_size(" 1 mb ") == 1024 * 1024
+
 
 class TestParseTimeDelta:
     def test_days(self):
@@ -40,6 +43,9 @@ class TestParseTimeDelta:
     def test_weeks(self):
         delta = parse_time_delta("2w")
         assert delta.days == 14
+
+    def test_time_parsing_allows_spaces(self):
+        assert parse_time_delta(" 7 d ").days == 7
 
 
 class TestSearchFilters:

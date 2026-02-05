@@ -15,7 +15,7 @@ MAX_CONTENT_SCAN_BYTES = 10 * 1024 * 1024
 
 
 def parse_size(s: str) -> int:
-    s = s.strip().upper()
+    s = s.strip().upper().replace(" ", "")
     multipliers = {"KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
     for suffix, mult in multipliers.items():
         if s.endswith(suffix):
@@ -24,7 +24,7 @@ def parse_size(s: str) -> int:
 
 
 def parse_time_delta(s: str) -> timedelta:
-    s = s.strip().lower()
+    s = s.strip().lower().replace(" ", "")
     units = {"m": "minutes", "h": "hours", "d": "days", "w": "weeks"}
     for suffix, kwarg in units.items():
         if s.endswith(suffix):
