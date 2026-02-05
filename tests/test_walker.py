@@ -108,3 +108,11 @@ class TestWalkAndFilter:
         assert "readme.md" in names
         assert "src" in names
         assert "login.py" not in names
+
+    def test_askfindignore_skips_paths(self, tmp_path):
+        _make_tree(tmp_path)
+        (tmp_path / ".askfindignore").write_text("tests\n")
+        filters = SearchFilters()
+        results = list(walk_and_filter(tmp_path, filters))
+        names = {p.name for p in results}
+        assert "test_auth.py" not in names

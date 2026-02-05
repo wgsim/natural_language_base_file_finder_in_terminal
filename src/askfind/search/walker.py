@@ -11,6 +11,22 @@ from askfind.search.filters import SearchFilters
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".hg", ".svn"}
 
 
+def _load_askfindignore(root: Path) -> set[str]:
+    ignore_file = root / ".askfindignore"
+    if not ignore_file.exists():
+        return set()
+    lines = []
+    try:
+        for line in ignore_file.read_text(errors="ignore").splitlines():
+            stripped = line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            lines.append(stripped)
+    except OSError:
+        return set()
+    return set(lines)
+
+
 def walk_and_filter(
     root: Path,
     filters: SearchFilters,
@@ -21,7 +37,8 @@ def walk_and_filter(
     Filters are applied during traversal in cheapest-first order.
     """
     count = 0
-    for path in _scan_recursive(root, filters, depth=0):
+    ignored = _load_askfindignore(root)
+    for path in _scan_recursive(root, filters, depth=0, ignored=ignored):
         yield path
         count += 1
         if max_results and count >= max_results:
@@ -32,6 +49,7 @@ def _scan_recursive(
     directory: Path,
     filters: SearchFilters,
     depth: int,
+    ignored: set[str],
 ) -> Generator[Path, None, None]:
     try:
         entries = os.scandir(directory)
@@ -42,7 +60,7 @@ def _scan_recursive(
 
     with entries:
         for entry in entries:
-            if entry.name in SKIP_DIRS:
+            if entry.name in SKIP_DIRS or entry.name in ignored:
                 continue
 
             is_dir = entry.is_dir(follow_symlinks=False)
@@ -103,4 +121,4 @@ def _scan_recursive(
 
     # Recurse into subdirectories
     for dir_path, next_depth in dirs_to_recurse:
-        yield from _scan_recursive(dir_path, filters, next_depth)
+        yield from _scan_recursive(dir_path, filters, next_depth, ignored)
