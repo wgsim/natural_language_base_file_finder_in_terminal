@@ -161,6 +161,11 @@ def _handle_config(args) -> int:
             models = resp.json().get("data", [])
             provider = args.provider
             printed = 0
+            if provider == "list":
+                providers = sorted({m.get("id", "unknown").split("/", 1)[0] for m in models})
+                for p in providers:
+                    print(p)
+                return 0
             for m in models:
                 model_id = m.get("id", "unknown")
                 if provider:
