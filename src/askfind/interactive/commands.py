@@ -10,7 +10,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.syntax import Syntax
 
-from askfind.output.formatter import FileResult
+from askfind.output.formatter import FileResult, human_size
 
 console = Console()
 
@@ -71,6 +71,8 @@ def preview(result: FileResult) -> None:
         if _is_binary(result.path):
             console.print(f"[yellow]Skipping binary file: {result.path}[/yellow]")
             return
+        size_str = human_size(file_size)
+        console.print(f"[dim]Size: {size_str} | Binary: no[/dim]")
         content = result.path.read_text(errors="replace")
         # Show first 50 lines
         lines = content.splitlines()[:50]
