@@ -89,3 +89,13 @@ def test_copy_and_preview_binary_message_consistent(tmp_path, capsys):
     preview(result)
     out = capsys.readouterr().out
     assert out.count("Skipping binary file") == 2
+
+
+def test_preview_includes_size_and_binary_flag(tmp_path, capsys):
+    f = tmp_path / "note.txt"
+    f.write_text("hello")
+    result = FileResult.from_path(f)
+    preview(result)
+    out = capsys.readouterr().out
+    assert "Size:" in out
+    assert "Binary:" in out
