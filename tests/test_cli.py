@@ -185,3 +185,30 @@ class TestMainIntegration:
         result = main(["python files", "--root", str(tmp_path)])
         assert result == 0
         mock_client.extract_filters.assert_called_once_with("python files")
+
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_default_root_used_when_root_missing(self, mock_config_cls, mock_get_key, mock_llm_cls, mock_walk, tmp_path):
+        (tmp_path / "test.py").write_text("hello")
+
+        mock_config = MagicMock()
+        mock_config.base_url = "http://test"
+        mock_config.model = "test-model"
+        mock_config.max_results = 50
+        mock_config.default_root = str(tmp_path)
+        mock_config_cls.return_value = mock_config
+
+        mock_client = MagicMock()
+        mock_client.extract_filters.return_value = '{"ext": [".py"]}'
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=None)
+        mock_llm_cls.return_value = mock_client
+
+        mock_walk.return_value = [tmp_path / "test.py"]
+
+        result = main(["python files"])
+        assert result == 0
+        called_root = mock_walk.call_args[0][0]
+        assert called_root == tmp_path.resolve()
