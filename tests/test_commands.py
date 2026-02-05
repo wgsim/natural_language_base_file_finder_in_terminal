@@ -99,3 +99,13 @@ def test_preview_includes_size_and_binary_flag(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "Size:" in out
     assert "Binary:" in out
+
+
+def test_preview_binary_unknown_on_read_error(tmp_path, capsys, monkeypatch):
+    f = tmp_path / "note.txt"
+    f.write_text("hello")
+    result = FileResult.from_path(f)
+    monkeypatch.setattr(type(result.path), "read_bytes", lambda self: (_ for _ in ()).throw(OSError("boom")))
+    preview(result)
+    out = capsys.readouterr().out
+    assert "Binary: unknown" in out
