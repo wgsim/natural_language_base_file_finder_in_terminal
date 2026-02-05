@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
+import os
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
@@ -247,7 +248,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
             raw_response = client.extract_filters(args.query)
-            filters = parse_llm_response(raw_response)
+            debug = os.environ.get("ASKFIND_DEBUG") == "1"
+            if debug:
+                filters, errors = parse_llm_response(raw_response, return_errors=True)
+                for err in errors:
+                    print(f"Warning: {err}", file=sys.stderr)
+            else:
+                filters = parse_llm_response(raw_response)
             root = Path(args.root).resolve()
             if root.is_file():
                 print("Error: Search root is a file.", file=sys.stderr)
