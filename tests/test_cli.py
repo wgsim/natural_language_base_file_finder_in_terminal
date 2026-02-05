@@ -107,6 +107,25 @@ def test_config_models_provider_no_match(mock_get, mock_key, capsys):
     assert "No models found" in err
 
 
+@patch("httpx.get")
+@patch("askfind.cli.get_api_key", return_value="sk-test")
+@patch("askfind.cli.Config.from_file")
+def test_config_models_provider_list(mock_config_cls, mock_get_key, mock_get, capsys):
+    mock_config = MagicMock()
+    mock_config.base_url = "http://test"
+    mock_config.model = "test-model"
+    mock_config.max_results = 50
+    mock_config_cls.return_value = mock_config
+    mock_get.return_value.json.return_value = {
+        "data": [{"id": "openai/gpt-4o"}, {"id": "anthropic/claude-3.5"}]
+    }
+    mock_get.return_value.raise_for_status.return_value = None
+    result = main(["config", "models", "--provider", "list"])
+    assert result == 0
+    out = capsys.readouterr().out
+    assert "openai" in out and "anthropic" in out
+
+
 class TestMainIntegration:
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")
