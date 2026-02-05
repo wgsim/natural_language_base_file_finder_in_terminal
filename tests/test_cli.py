@@ -126,6 +126,21 @@ def test_config_models_provider_list(mock_config_cls, mock_get_key, mock_get, ca
     assert "openai" in out and "anthropic" in out
 
 
+@patch("askfind.cli.get_api_key", return_value="sk-test")
+@patch("askfind.cli.Config.from_file")
+@patch("askfind.cli.LLMClient")
+def test_root_file_error_message(mock_llm, mock_cfg, mock_key, tmp_path, capsys):
+    file_path = tmp_path / "file.txt"
+    file_path.write_text("x")
+    mock_cfg.return_value = MagicMock(base_url="http://test", model="m", max_results=50)
+    mock_llm.return_value.__enter__.return_value = mock_llm.return_value
+    mock_llm.return_value.extract_filters.return_value = "{}"
+    result = main(["query", "--root", str(file_path)])
+    assert result == 3
+    err = capsys.readouterr().err
+    assert "Search root is a file" in err
+
+
 class TestMainIntegration:
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")

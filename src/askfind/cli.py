@@ -249,6 +249,9 @@ def main(argv: list[str] | None = None) -> int:
             raw_response = client.extract_filters(args.query)
             filters = parse_llm_response(raw_response)
             root = Path(args.root).resolve()
+            if root.is_file():
+                print("Error: Search root is a file.", file=sys.stderr)
+                return 3
             paths = list(walk_and_filter(root, filters, max_results=max_results))
             results = [FileResult.from_path(p) for p in paths]
 
