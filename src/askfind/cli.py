@@ -255,7 +255,10 @@ def main(argv: list[str] | None = None) -> int:
                     print(f"Warning: {err}", file=sys.stderr)
             else:
                 filters = parse_llm_response(raw_response)
-            root = Path(args.root).resolve()
+            root_value = args.root
+            if args.root == "." and config.default_root:
+                root_value = config.default_root
+            root = Path(root_value).resolve()
             if root.is_file():
                 print("Error: Search root is a file.", file=sys.stderr)
                 return 3
