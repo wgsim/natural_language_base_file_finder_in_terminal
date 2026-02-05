@@ -19,12 +19,11 @@ MAX_CLIPBOARD_SIZE = 1 * 1024 * 1024
 MAX_PREVIEW_SIZE = 10 * 1024 * 1024
 
 
-def _is_binary(path: Path) -> bool:
+def _is_binary(path: Path) -> bool | None:
     try:
-        with path.open("rb") as f:
-            chunk = f.read(1024)
+        chunk = path.read_bytes()[:1024]
     except OSError:
-        return False
+        return None
     return b"\x00" in chunk
 
 
@@ -46,7 +45,10 @@ def copy_content(result: FileResult) -> None:
         if file_size > MAX_CLIPBOARD_SIZE:
             console.print(f"[yellow]File too large ({file_size / 1024 / 1024:.1f} MB). Max: {MAX_CLIPBOARD_SIZE / 1024 / 1024:.0f} MB[/yellow]")
             return
-        if _is_binary(result.path):
+        is_binary = _is_binary(result.path)
+        if is_binary is None:
+            console.print(f"[yellow]Skipping binary check (read error): {result.path}[/yellow]")
+        elif is_binary:
             console.print(f"[yellow]Skipping binary file: {result.path}[/yellow]")
             return
         content = result.path.read_text(errors="replace")
@@ -68,11 +70,14 @@ def preview(result: FileResult) -> None:
         if file_size > MAX_PREVIEW_SIZE:
             console.print(f"[yellow]File too large ({file_size / 1024 / 1024:.1f} MB). Max: {MAX_PREVIEW_SIZE / 1024 / 1024:.0f} MB[/yellow]")
             return
-        if _is_binary(result.path):
+        is_binary = _is_binary(result.path)
+        if is_binary is None:
+            console.print(f"[dim]Size: {human_size(file_size)} | Binary: unknown[/dim]")
+        elif is_binary:
             console.print(f"[yellow]Skipping binary file: {result.path}[/yellow]")
             return
-        size_str = human_size(file_size)
-        console.print(f"[dim]Size: {size_str} | Binary: no[/dim]")
+        else:
+            console.print(f"[dim]Size: {human_size(file_size)} | Binary: no[/dim]")
         content = result.path.read_text(errors="replace")
         # Show first 50 lines
         lines = content.splitlines()[:50]
