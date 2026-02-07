@@ -58,3 +58,11 @@ class TestParseLlmResponse:
         raw = '{"ext": ".py"}'
         filters = parse_llm_response(raw)
         assert filters.ext == [".py"]
+
+    def test_multiple_filters_combined(self):
+        """Should handle multiple filters in one query."""
+        raw = '{"ext": [".py", ".js"], "type": "f", "depth": "<3"}'
+        filters = parse_llm_response(raw)
+        assert filters.ext == [".py", ".js"]
+        assert filters.type == "f"
+        assert filters.depth == "<3"

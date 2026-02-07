@@ -19,7 +19,8 @@ def parse_size(s: str) -> int:
     for suffix, mult in multipliers.items():
         if s.endswith(suffix):
             return int(float(s[: -len(suffix)]) * mult)
-    return int(s)
+    # Handle both integer and decimal bytes (e.g., "100" or "1.5")
+    return int(float(s))
 
 
 def parse_time_delta(s: str) -> timedelta:
