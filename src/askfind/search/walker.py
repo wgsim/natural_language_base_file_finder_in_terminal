@@ -52,23 +52,23 @@ def _scan_recursive(
 
             # Tier 0: type and depth (no I/O)
             if not filters.matches_type(is_file=is_file, is_dir=is_dir, is_link=is_link):
-                if is_dir:
+                if is_dir and filters.matches_depth(depth + 1):
                     dirs_to_recurse.append((entry_path, depth + 1))
                 continue
 
             if not filters.matches_depth(depth):
-                if is_dir:
+                if is_dir and filters.matches_depth(depth + 1):
                     dirs_to_recurse.append((entry_path, depth + 1))
                 continue
 
             # Tier 1: name and path checks (no I/O)
             if not filters.matches_name(entry.name):
-                if is_dir:
+                if is_dir and filters.matches_depth(depth + 1):
                     dirs_to_recurse.append((entry_path, depth + 1))
                 continue
 
             if not filters.matches_path(str(entry_path)):
-                if is_dir:
+                if is_dir and filters.matches_depth(depth + 1):
                     dirs_to_recurse.append((entry_path, depth + 1))
                 continue
 
@@ -76,12 +76,12 @@ def _scan_recursive(
             try:
                 stat = entry.stat(follow_symlinks=False)
             except OSError:
-                if is_dir:
+                if is_dir and filters.matches_depth(depth + 1):
                     dirs_to_recurse.append((entry_path, depth + 1))
                 continue
 
             if not filters.matches_stat(stat):
-                if is_dir:
+                if is_dir and filters.matches_depth(depth + 1):
                     dirs_to_recurse.append((entry_path, depth + 1))
                 continue
 
@@ -93,12 +93,12 @@ def _scan_recursive(
                     yield entry_path
                 else:
                     # Directory - skip yielding but recurse
-                    if is_dir:
+                    if is_dir and filters.matches_depth(depth + 1):
                         dirs_to_recurse.append((entry_path, depth + 1))
             else:
                 # No content filter - yield everything that passed
                 yield entry_path
-                if is_dir:
+                if is_dir and filters.matches_depth(depth + 1):
                     dirs_to_recurse.append((entry_path, depth + 1))
 
     # Recurse into subdirectories

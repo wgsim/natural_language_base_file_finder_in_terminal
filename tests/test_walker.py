@@ -1,6 +1,7 @@
 """Tests for filesystem walker."""
 
 from pathlib import Path
+import askfind.search.walker as walker
 
 from askfind.search.filters import SearchFilters
 from askfind.search.walker import walk_and_filter
@@ -90,3 +91,33 @@ class TestWalkAndFilter:
         filters = SearchFilters()
         results = list(walk_and_filter(tmp_path, filters, max_results=2))
         assert len(results) == 2
+
+    def test_depth_prunes_recursion(self, tmp_path, monkeypatch):
+        _make_tree(tmp_path)
+        filters = SearchFilters(depth="<2")
+
+        orig_scandir = walker.os.scandir
+        scanned = []
+
+        def scandir_guard(path):
+            scanned.append(Path(path).resolve().as_posix())
+            return orig_scandir(path)
+
+        monkeypatch.setattr(walker.os, "scandir", scandir_guard)
+
+        results = list(walk_and_filter(tmp_path, filters))
+        names = {p.name for p in results}
+        assert "src" in names
+        assert "readme.md" in names
+        assert scanned
+        assert (tmp_path / "src").resolve().as_posix() in scanned
+        assert (tmp_path / "src" / "auth").resolve().as_posix() not in scanned
+
+    def test_depth_prunes_results(self, tmp_path):
+        _make_tree(tmp_path)
+        filters = SearchFilters(depth="<1")
+        results = list(walk_and_filter(tmp_path, filters))
+        names = {p.name for p in results}
+        assert "src" in names
+        assert "readme.md" in names
+        assert "login.py" not in names
