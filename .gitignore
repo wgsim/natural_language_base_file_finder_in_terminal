@@ -111,5 +111,8 @@ $RECYCLE.BIN/
 mockup_generator.py
 docs/mockup_interactive_mode.png
 
+# Packaging metadata (local editable installs)
+src/*.egg-info/
+
 # Worktrees
 .worktrees/
