@@ -36,7 +36,6 @@ class InteractiveSession:
         self.config = config
         self.root = root.resolve()
         self.results: list[FileResult] = []
-        self.conversation: list[dict[str, str]] = []
 
         api_key = get_api_key()
         if not api_key:

@@ -229,6 +229,12 @@ def main(argv: list[str] | None = None) -> int:
     model = args.model or config.model
     max_results = args.max_results or config.max_results
 
+    # Validate query length
+    MAX_QUERY_LENGTH = 1000
+    if len(args.query) > MAX_QUERY_LENGTH:
+        print(f"Error: Query exceeds maximum length of {MAX_QUERY_LENGTH} characters.", file=sys.stderr)
+        return 2
+
     try:
         with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
             raw_response = client.extract_filters(args.query)
