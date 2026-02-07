@@ -116,3 +116,6 @@ src/*.egg-info/
 
 # Worktrees
 .worktrees/
+
+# Session files
+SESSION_SUMMARY.md
