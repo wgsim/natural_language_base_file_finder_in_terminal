@@ -6,7 +6,34 @@ build-backend = "setuptools.build_meta"
 name = "askfind"
 version = "0.1.0"
 description = "Natural language file finder for the terminal"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Your Name", email = "your.email@example.com"}
+]
+keywords = ["cli", "search", "files", "llm", "natural-language"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Filesystems",
+    "Topic :: Utilities",
+    "Typing :: Typed",
+]
 requires-python = ">=3.12"
+
+[project.urls]
+Homepage = "https://github.com/wgsim/natural_language_base_file_finder_in_terminal"
+Repository = "https://github.com/wgsim/natural_language_base_file_finder_in_terminal"
+Issues = "https://github.com/wgsim/natural_language_base_file_finder_in_terminal/issues"
+Changelog = "https://github.com/wgsim/natural_language_base_file_finder_in_terminal/blob/main/CHANGELOG.md"
+
 dependencies = [
     "httpx>=0.27",
     "rich>=13.0",
@@ -27,6 +54,9 @@ askfind = "askfind.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+askfind = ["py.typed"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

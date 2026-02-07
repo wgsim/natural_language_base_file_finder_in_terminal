@@ -23,6 +23,12 @@ class TestParseSize:
     def test_case_insensitive(self):
         assert parse_size("1kb") == 1024
 
+    def test_decimal_bytes(self):
+        assert parse_size("1.5") == 1
+
+    def test_decimal_with_unit(self):
+        assert parse_size("1.5MB") == int(1.5 * 1024 * 1024)
+
 
 class TestParseTimeDelta:
     def test_days(self):

@@ -13,6 +13,9 @@ from dataclasses import fields
 from askfind.config import Config, get_api_key, get_config_path, set_api_key
 from askfind.llm.client import LLMClient
 from askfind.llm.parser import parse_llm_response
+from askfind.logging_config import setup_logging, get_logger
+
+logger = get_logger(__name__)
 from askfind.output.formatter import FileResult, format_json, format_plain, format_verbose
 from askfind.search.walker import walk_and_filter
 
@@ -32,6 +35,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Override LLM model")
     parser.add_argument("--api-key", help="One-off API key")
     parser.add_argument("--no-rerank", action="store_true", help="Skip semantic re-ranking")
+    parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--interactive-session", action="store_true", help=argparse.SUPPRESS)
     return parser
 
@@ -88,7 +92,7 @@ def _build_config_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _handle_config(args) -> int:
+def _handle_config(args: argparse.Namespace) -> int:
     config = Config.from_file(get_config_path())
     if args.config_action == "show":
         from rich.console import Console
@@ -178,6 +182,14 @@ def main(argv: list[str] | None = None) -> int:
     # Get actual argv - if None, use sys.argv[1:]
     raw_argv = argv if argv is not None else sys.argv[1:]
 
+    # Early setup of logging if --debug is present
+    if "--debug" in raw_argv:
+        setup_logging(debug=True)
+    else:
+        setup_logging()
+
+    logger.debug(f"Starting askfind with args: {raw_argv}")
+
     # Check if first arg is "config" subcommand
     if raw_argv and len(raw_argv) > 0 and raw_argv[0] == "config":
         config_parser = _build_config_parser()
@@ -236,8 +248,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     try:
+        logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
         with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
+            logger.debug(f"Sending query to LLM: {args.query}")
             raw_response = client.extract_filters(args.query)
+            logger.debug(f"Received LLM response: {raw_response[:200]}..." if len(raw_response) > 200 else f"Received LLM response: {raw_response}")
             filters = parse_llm_response(raw_response)
             root = Path(args.root).resolve()
             paths = list(walk_and_filter(root, filters, max_results=max_results))
