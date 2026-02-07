@@ -40,6 +40,11 @@ def _scan_recursive(
 
     dirs_to_recurse: list[tuple[Path, int]] = []
 
+    def schedule_recursion(is_dir: bool, path: Path, current_depth: int) -> None:
+        """Schedule directory for recursion if it's a dir and within depth limit."""
+        if is_dir and filters.matches_depth(current_depth + 1):
+            dirs_to_recurse.append((path, current_depth + 1))
+
     with entries:
         for entry in entries:
             if entry.name in SKIP_DIRS:
@@ -52,37 +57,31 @@ def _scan_recursive(
 
             # Tier 0: type and depth (no I/O)
             if not filters.matches_type(is_file=is_file, is_dir=is_dir, is_link=is_link):
-                if is_dir and filters.matches_depth(depth + 1):
-                    dirs_to_recurse.append((entry_path, depth + 1))
+                schedule_recursion(is_dir, entry_path, depth)
                 continue
 
             if not filters.matches_depth(depth):
-                if is_dir and filters.matches_depth(depth + 1):
-                    dirs_to_recurse.append((entry_path, depth + 1))
+                schedule_recursion(is_dir, entry_path, depth)
                 continue
 
             # Tier 1: name and path checks (no I/O)
             if not filters.matches_name(entry.name):
-                if is_dir and filters.matches_depth(depth + 1):
-                    dirs_to_recurse.append((entry_path, depth + 1))
+                schedule_recursion(is_dir, entry_path, depth)
                 continue
 
             if not filters.matches_path(str(entry_path)):
-                if is_dir and filters.matches_depth(depth + 1):
-                    dirs_to_recurse.append((entry_path, depth + 1))
+                schedule_recursion(is_dir, entry_path, depth)
                 continue
 
             # Tier 2: stat-based checks
             try:
                 stat = entry.stat(follow_symlinks=False)
             except OSError:
-                if is_dir and filters.matches_depth(depth + 1):
-                    dirs_to_recurse.append((entry_path, depth + 1))
+                schedule_recursion(is_dir, entry_path, depth)
                 continue
 
             if not filters.matches_stat(stat):
-                if is_dir and filters.matches_depth(depth + 1):
-                    dirs_to_recurse.append((entry_path, depth + 1))
+                schedule_recursion(is_dir, entry_path, depth)
                 continue
 
             # Tier 3: content checks (most expensive, files only)
@@ -93,13 +92,11 @@ def _scan_recursive(
                     yield entry_path
                 else:
                     # Directory - skip yielding but recurse
-                    if is_dir and filters.matches_depth(depth + 1):
-                        dirs_to_recurse.append((entry_path, depth + 1))
+                    schedule_recursion(is_dir, entry_path, depth)
             else:
                 # No content filter - yield everything that passed
                 yield entry_path
-                if is_dir and filters.matches_depth(depth + 1):
-                    dirs_to_recurse.append((entry_path, depth + 1))
+                schedule_recursion(is_dir, entry_path, depth)
 
     # Recurse into subdirectories
     for dir_path, next_depth in dirs_to_recurse:
