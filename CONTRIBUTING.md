@@ -51,6 +51,7 @@ Feature suggestions are welcome! Please:
    conda create -n askfind python=3.12
    conda activate askfind
    pip install -e ".[dev]"
+   git config core.hooksPath .githooks
    ```
 
 #### Development Workflow

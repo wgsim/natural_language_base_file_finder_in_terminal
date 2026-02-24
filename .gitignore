@@ -27,6 +27,7 @@ MANIFEST
 .venv
 env/
 venv/
+pytest_env/
 ENV/
 env.bak/
 venv.bak/

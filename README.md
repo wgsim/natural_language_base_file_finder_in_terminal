@@ -234,6 +234,21 @@ pytest tests/test_filters.py -v
 pytest tests/ --cov=askfind --cov-report=html
 ```
 
+### Git Hooks
+
+This repository includes shared git hooks under `.githooks/`.
+
+```bash
+# One-time setup per clone/machine
+git config core.hooksPath .githooks
+```
+
+After setup, both `pre-commit` and `pre-push` run:
+
+```bash
+PYTHONPATH=src ./pytest_env/bin/pytest -q
+```
+
 ### Contributing
 
 1. Fork the repository
