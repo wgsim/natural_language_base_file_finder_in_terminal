@@ -54,7 +54,7 @@ class TestMain:
         assert result == 2
 
     @patch("askfind.cli.get_api_key", return_value=None)
-    def test_query_returns_0(self, mock_get_key):
+    def test_query_without_api_key_returns_2(self, mock_get_key):
         result = main(["find python files"])
         assert result == 2  # Returns 2 when no API key
 
@@ -97,3 +97,67 @@ class TestMainIntegration:
         result = main(["python files", "--root", str(tmp_path)])
         assert result == 0
         mock_client.extract_filters.assert_called_once_with("python files")
+
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_uses_config_default_root_when_root_not_overridden(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_walk, tmp_path
+    ):
+        default_root = tmp_path / "default-root"
+        default_root.mkdir()
+        result_file = default_root / "matched.py"
+        result_file.write_text("print('ok')\n")
+
+        mock_config = MagicMock()
+        mock_config.base_url = "http://test"
+        mock_config.model = "test-model"
+        mock_config.max_results = 50
+        mock_config.default_root = str(default_root)
+        mock_config_cls.return_value = mock_config
+
+        mock_client = MagicMock()
+        mock_client.extract_filters.return_value = '{"ext": [".py"]}'
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=None)
+        mock_llm_cls.return_value = mock_client
+        mock_walk.return_value = [result_file]
+
+        result = main(["python files"])
+
+        assert result == 0
+        assert mock_walk.call_args.args[0] == default_root.resolve()
+
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_explicit_root_overrides_config_default_root(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_walk, tmp_path
+    ):
+        default_root = tmp_path / "default-root"
+        default_root.mkdir()
+        explicit_root = tmp_path / "explicit-root"
+        explicit_root.mkdir()
+        result_file = explicit_root / "matched.py"
+        result_file.write_text("print('ok')\n")
+
+        mock_config = MagicMock()
+        mock_config.base_url = "http://test"
+        mock_config.model = "test-model"
+        mock_config.max_results = 50
+        mock_config.default_root = str(default_root)
+        mock_config_cls.return_value = mock_config
+
+        mock_client = MagicMock()
+        mock_client.extract_filters.return_value = '{"ext": [".py"]}'
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=None)
+        mock_llm_cls.return_value = mock_client
+        mock_walk.return_value = [result_file]
+
+        result = main(["python files", "--root", str(explicit_root)])
+
+        assert result == 0
+        assert mock_walk.call_args.args[0] == explicit_root.resolve()

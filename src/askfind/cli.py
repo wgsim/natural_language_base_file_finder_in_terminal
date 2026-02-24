@@ -92,6 +92,14 @@ def _build_config_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _has_root_override(raw_argv: list[str]) -> bool:
+    """Return True when root was explicitly provided on CLI."""
+    for arg in raw_argv:
+        if arg in ("-r", "--root") or arg.startswith("--root="):
+            return True
+    return False
+
+
 def _handle_config(args: argparse.Namespace) -> int:
     config = Config.from_file(get_config_path())
     if args.config_action == "show":
@@ -205,11 +213,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     config = Config.from_file(get_config_path())
+    root_value = args.root if _has_root_override(raw_argv) else config.default_root
+    root_path = Path(root_value).resolve()
 
     # Handle --interactive-session (spawned pane)
     if args.interactive_session:
         from askfind.interactive.session import InteractiveSession
-        session = InteractiveSession(config, Path(args.root))
+        session = InteractiveSession(config, root_path)
         session.run()
         return 0
 
@@ -220,7 +230,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0  # Pane was spawned, exit this process
         # Fallback: run inline
         from askfind.interactive.session import InteractiveSession
-        session = InteractiveSession(config, Path(args.root))
+        session = InteractiveSession(config, root_path)
         session.run()
         return 0
 
@@ -254,8 +264,7 @@ def main(argv: list[str] | None = None) -> int:
             raw_response = client.extract_filters(args.query)
             logger.debug(f"Received LLM response: {raw_response[:200]}..." if len(raw_response) > 200 else f"Received LLM response: {raw_response}")
             filters = parse_llm_response(raw_response)
-            root = Path(args.root).resolve()
-            paths = list(walk_and_filter(root, filters, max_results=max_results))
+            paths = list(walk_and_filter(root_path, filters, max_results=max_results))
             results = [FileResult.from_path(p) for p in paths]
 
             if not results:
@@ -277,7 +286,7 @@ def main(argv: list[str] | None = None) -> int:
         print("\nSearch cancelled.", file=sys.stderr)
         return 130
     except FileNotFoundError as e:
-        print(f"Error: Search root not found: {args.root}", file=sys.stderr)
+        print(f"Error: Search root not found: {root_value}", file=sys.stderr)
         return 3
     except PermissionError as e:
         print(f"Error: Permission denied accessing search root", file=sys.stderr)

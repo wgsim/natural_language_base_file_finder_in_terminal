@@ -36,7 +36,7 @@ def copy_content(result: FileResult) -> None:
         if file_size > MAX_CLIPBOARD_SIZE:
             console.print(f"[yellow]File too large ({file_size / 1024 / 1024:.1f} MB). Max: {MAX_CLIPBOARD_SIZE / 1024 / 1024:.0f} MB[/yellow]")
             return
-        content = result.path.read_text()
+        content = result.path.read_text(errors="replace")
         _copy_to_clipboard(content)
         console.print(f"[green]Copied content of: {result.path.name}[/green]")
     except OSError as e:
