@@ -1,0 +1,12 @@
+name: askfind_env
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+      - -r requirements.txt
+      - pytest==9.0.2
+      - pytest-cov==7.0.0
+      - pip-audit>=2.0
+      - -e .
