@@ -100,6 +100,20 @@ class TestSearchFilters:
         filters2 = SearchFilters(size=">1MB")
         assert filters2.matches_stat(stat) is False
 
+    def test_invalid_size_filter_is_ignored(self, tmp_path):
+        f = tmp_path / "file.txt"
+        f.write_text("content")
+        stat = f.stat()
+        filters = SearchFilters(size=">huge")
+        assert filters.matches_stat(stat) is True
+
+    def test_invalid_mod_filter_is_ignored(self, tmp_path):
+        f = tmp_path / "file.txt"
+        f.write_text("content")
+        stat = f.stat()
+        filters = SearchFilters(mod=">today")
+        assert filters.matches_stat(stat) is True
+
     def test_type_file(self):
         filters = SearchFilters(type="file")
         assert filters.matches_type(is_file=True, is_dir=False, is_link=False) is True
