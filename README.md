@@ -189,7 +189,7 @@ conda env create -f environment.yml
 conda activate askfind_env
 
 # Run tests
-pytest tests/ -v
+conda run -n askfind_env pytest tests/ -v
 ```
 
 ### Project Structure
@@ -213,7 +213,7 @@ askfind/
 │       ├── pane.py         # Multiplexer detection and spawning
 │       ├── session.py      # REPL session
 │       └── commands.py     # Action commands
-├── tests/                  # Test suite (73 tests)
+├── tests/                  # Test suite
 ├── docs/                   # Documentation
 └── pyproject.toml          # Project metadata and dependencies
 ```
@@ -222,14 +222,19 @@ askfind/
 
 ```bash
 # Run all tests
-pytest tests/ -v
+conda run -n askfind_env pytest tests/ -v
+
+# Fallback if conda is unavailable
+./pytest_env/bin/pytest tests/ -v
 
 # Run specific test file
-pytest tests/test_filters.py -v
+conda run -n askfind_env pytest tests/test_filters.py -v
 
 # Run with coverage
-pytest tests/ --cov=askfind --cov-report=html
+conda run -n askfind_env pytest tests/ --cov=askfind --cov-report=html
 ```
+
+CI enforces a minimum coverage gate of 85%. Aim higher (for example, 90%+) when practical.
 
 ### Git Hooks
 
@@ -254,7 +259,7 @@ If `askfind_env` is not available, hooks fall back to `./pytest_env/bin/ruff` an
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Write tests for your changes
-4. Ensure all tests pass (`pytest tests/`)
+4. Ensure all tests pass (`conda run -n askfind_env pytest tests/ -v`)
 5. Commit your changes (`git commit -m 'feat: add amazing feature'`)
 6. Push to the branch (`git push origin feature/amazing-feature`)
 7. Open a Pull Request

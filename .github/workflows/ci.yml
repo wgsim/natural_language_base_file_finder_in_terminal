@@ -32,6 +32,4 @@ jobs:
         run: ruff check src tests
 
       - name: Run tests
-        env:
-          PYTHONPATH: src
-        run: pytest -q
+        run: PYTHONPATH=src pytest -q --cov=src/askfind --cov-fail-under=85
