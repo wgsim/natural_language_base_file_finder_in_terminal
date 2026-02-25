@@ -21,8 +21,8 @@
 - [ ] Memoization of LLM responses for similar queries
 
 #### Search Enhancements
-- [ ] Git-aware searching (respect .gitignore by default)
-- [ ] Support for `.askfindignore` files
+- [x] Git-aware searching (respect root `.gitignore` by default)
+- [x] Support for root `.askfindignore` files
 - [ ] Symbolic link following options (`--follow-symlinks`)
 - [ ] Extended attribute filtering (macOS tags, file labels)
 - [ ] Binary file detection and exclusion
