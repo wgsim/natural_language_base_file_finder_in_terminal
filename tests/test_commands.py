@@ -175,11 +175,33 @@ class TestOpenInEditor:
         file_path = tmp_path / "example.txt"
         file_path.write_text("hello")
         result = FileResult.from_path(file_path)
+        mock_run.return_value = subprocess.CompletedProcess(
+            ["/usr/bin/vim", str(file_path)],
+            returncode=0,
+        )
 
         open_in_editor(result, "vim")
 
         mock_which.assert_called_once_with("vim")
         mock_run.assert_called_once_with(["/usr/bin/vim", str(file_path)], check=False)
+
+    @patch("askfind.interactive.commands.console.print")
+    @patch("askfind.interactive.commands.subprocess.run")
+    @patch("askfind.interactive.commands.shutil.which", return_value="/usr/bin/vim")
+    def test_open_in_editor_reports_non_zero_exit(self, mock_which, mock_run, mock_print, tmp_path):
+        file_path = tmp_path / "example.txt"
+        file_path.write_text("hello")
+        result = FileResult.from_path(file_path)
+        mock_run.return_value = subprocess.CompletedProcess(
+            ["/usr/bin/vim", str(file_path)],
+            returncode=2,
+        )
+
+        open_in_editor(result, "vim")
+
+        mock_which.assert_called_once_with("vim")
+        mock_run.assert_called_once_with(["/usr/bin/vim", str(file_path)], check=False)
+        mock_print.assert_called_once_with("[red]Editor exited with code 2[/red]")
 
     @patch("askfind.interactive.commands.console.print")
     @patch("askfind.interactive.commands.subprocess.run", side_effect=subprocess.SubprocessError("boom"))
