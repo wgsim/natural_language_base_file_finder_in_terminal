@@ -1,8 +1,9 @@
 """Tests for CLI argument parsing and entry point."""
 
+import httpx
 from unittest.mock import patch, MagicMock
 
-from askfind.cli import build_parser, main
+from askfind.cli import _validate_base_url, build_parser, main
 from askfind.search.filters import SearchFilters
 
 
@@ -46,6 +47,23 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["test", "--no-rerank"])
         assert args.no_rerank is True
+
+
+class TestValidateBaseUrl:
+    def test_accepts_https_remote(self):
+        is_valid, error = _validate_base_url("https://openrouter.ai/api/v1")
+        assert is_valid is True
+        assert error == ""
+
+    def test_rejects_http_remote(self):
+        is_valid, error = _validate_base_url("http://example.com/v1")
+        assert is_valid is False
+        assert "localhost" in error
+
+    def test_accepts_http_localhost(self):
+        is_valid, error = _validate_base_url("http://localhost:11434/v1")
+        assert is_valid is True
+        assert error == ""
 
 
 class TestMain:
@@ -161,3 +179,61 @@ class TestMainIntegration:
 
         assert result == 0
         assert mock_walk.call_args.args[0] == explicit_root.resolve()
+
+
+class TestConfigSubcommand:
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_unknown_key_returns_2(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "unknown_key", "value"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_rejects_invalid_base_url(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "base_url", "http://example.com"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_rejects_non_integer_max_results(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "max_results", "many"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_max_results_success(self, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "set", "max_results", "25"])
+        assert result == 0
+        assert mock_config.max_results == 25
+        mock_config.save.assert_called_once()
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value=None)
+    def test_config_models_without_key_returns_2(self, mock_get_key, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config.base_url = "https://api.example.com"
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "models"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.get")
+    def test_config_models_http_status_error_returns_3(self, mock_get, mock_get_key, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config.base_url = "https://api.example.com"
+        mock_config_cls.return_value = mock_config
+
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Too many requests",
+            request=MagicMock(),
+            response=mock_response,
+        )
+        mock_get.return_value = mock_response
+
+        result = main(["config", "models"])
+        assert result == 3
