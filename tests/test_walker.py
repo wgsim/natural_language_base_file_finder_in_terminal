@@ -270,3 +270,49 @@ class TestWalkAndFilter:
         assert tmp_path / "readme.md" not in results
         assert (tmp_path / "src").resolve().as_posix() in scanned
         assert (tmp_path / "src" / "auth").resolve().as_posix() in scanned
+
+    def test_gitignore_excludes_matching_files(self, tmp_path):
+        _make_tree(tmp_path)
+        (tmp_path / ".gitignore").write_text("*.md\n")
+
+        results = list(walk_and_filter(tmp_path, SearchFilters()))
+        names = {p.name for p in results}
+
+        assert "readme.md" not in names
+        assert "login.py" in names
+
+    def test_askfindignore_excludes_directory(self, tmp_path):
+        _make_tree(tmp_path)
+        (tmp_path / ".askfindignore").write_text("tests/\n")
+
+        results = list(walk_and_filter(tmp_path, SearchFilters()))
+        names = {p.name for p in results}
+
+        assert "test_auth.py" not in names
+        assert "config.toml" in names
+
+    def test_ignore_negation_reincludes_file(self, tmp_path):
+        _make_tree(tmp_path)
+        (tmp_path / ".gitignore").write_text("*.py\n!login.py\n")
+
+        results = list(walk_and_filter(tmp_path, SearchFilters()))
+        names = {p.name for p in results}
+
+        assert "login.py" in names
+        assert "logout.py" not in names
+        assert "test_auth.py" not in names
+
+    def test_can_disable_ignore_files(self, tmp_path):
+        _make_tree(tmp_path)
+        (tmp_path / ".gitignore").write_text("*.md\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(),
+                respect_ignore_files=False,
+            )
+        )
+        names = {p.name for p in results}
+
+        assert "readme.md" in names
