@@ -92,3 +92,24 @@ def test_compare_sources_detects_mismatch():
         },
     )
     assert any("version mismatch for ruff" in err for err in errors)
+
+
+def test_read_gitignore_entries_ignores_comments_and_blanks():
+    entries = CHECK._read_gitignore_entries(
+        """
+# comment
+environment.lock.yml
+
+environment.lock.txt
+"""
+    )
+    assert entries == {"environment.lock.yml", "environment.lock.txt"}
+
+
+def test_validate_lock_file_policy_requires_ignored_and_untracked():
+    errors = CHECK._validate_lock_file_policy(
+        gitignore_entries={"environment.lock.yml"},
+        tracked_lock_files={"environment.lock.txt"},
+    )
+    assert ".gitignore: missing lock policy entry for environment.lock.txt" in errors
+    assert "lock file must not be tracked: environment.lock.txt" in errors

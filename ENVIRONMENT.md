@@ -61,3 +61,6 @@ conda list -n askfind_env --explicit > environment.lock.txt
 - Lock usage:
   - `environment.lock.txt`: exact same-platform recreation (`conda create -n askfind_env --file environment.lock.txt`).
   - `environment.lock.yml`: portable recreation with solver variability (`conda env create -f environment.lock.yml`).
+- Lock policy:
+  - `environment.lock.yml` and `environment.lock.txt` are local artifacts and are intentionally not tracked in git.
+  - CI and git hooks enforce that both files remain ignored and untracked.

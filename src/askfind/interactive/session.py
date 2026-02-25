@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import httpx
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
@@ -117,16 +118,15 @@ class InteractiveSession:
             table.add_column("idx", style="yellow bold", width=5)
             table.add_column("path", style="blue")
             table.add_column("size", style="dim", justify="right", width=10)
-            table.add_column("date", style="dim", width=8)
+            table.add_column("date", style="dim", width=12)
 
             for i, r in enumerate(self.results, 1):
                 size_str = human_size(r.size)
-                date_str = r.modified.strftime("%b %d")
+                date_str = r.modified.strftime("%b %d %Y")
                 table.add_row(f"[{i}]", str(r.path), size_str, date_str)
 
             console.print(table)
             console.print()
-        except Exception as e:
+        except (httpx.HTTPError, OSError, ValueError, RuntimeError) as e:
             console.print(f"[red]Error: {e}[/red]")
-
 

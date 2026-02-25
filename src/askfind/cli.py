@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import ipaddress
+import json as json_module
 import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
+import httpx
 from dataclasses import fields
 
 from askfind.config import Config, get_api_key, get_config_path, set_api_key
@@ -69,7 +71,7 @@ def _validate_base_url(url: str) -> tuple[bool, str]:
                 pass
 
         return True, ""
-    except Exception as e:
+    except (AttributeError, TypeError, ValueError) as e:
         return False, f"Invalid URL format: {e}"
 
 
@@ -163,7 +165,6 @@ def _handle_config(args: argparse.Namespace) -> int:
             print("Error: No API key configured.", file=sys.stderr)
             return 2
         try:
-            import httpx
             resp = httpx.get(
                 f"{config.base_url}/models",
                 headers={"Authorization": f"Bearer {api_key}"},
@@ -176,10 +177,10 @@ def _handle_config(args: argparse.Namespace) -> int:
         except httpx.HTTPStatusError as e:
             print(f"Error: API returned HTTP {e.response.status_code}", file=sys.stderr)
             return 3
-        except (httpx.ConnectError, httpx.TimeoutException):
+        except httpx.RequestError:
             print(f"Error: Cannot connect to API server at {config.base_url}", file=sys.stderr)
             return 3
-        except Exception as e:
+        except (ValueError, TypeError, KeyError, RuntimeError) as e:
             print(f"Error: {type(e).__name__}", file=sys.stderr)
             return 3
         return 0
@@ -291,27 +292,22 @@ def main(argv: list[str] | None = None) -> int:
     except PermissionError:
         print("Error: Permission denied accessing search root", file=sys.stderr)
         return 3
-    except Exception as e:
-        import httpx
-        import json as json_module
-
-        # Provide sanitized error messages for common error types
-        if isinstance(e, httpx.HTTPStatusError):
-            print(f"Error: API request failed (HTTP {e.response.status_code})", file=sys.stderr)
-            return 3
-        elif isinstance(e, (httpx.ConnectError, httpx.TimeoutException)):
-            print("Error: Cannot connect to API server. Check your network and base_url config.", file=sys.stderr)
-            return 3
-        elif isinstance(e, json_module.JSONDecodeError):
-            print("Error: Invalid response from LLM API", file=sys.stderr)
-            return 3
-        else:
-            logger.exception("Unhandled error while executing askfind query")
-            print(
-                "Error: Unexpected internal error. Run with --debug for details.",
-                file=sys.stderr,
-            )
-            return 3
+    except httpx.HTTPStatusError as e:
+        print(f"Error: API request failed (HTTP {e.response.status_code})", file=sys.stderr)
+        return 3
+    except httpx.RequestError:
+        print("Error: Cannot connect to API server. Check your network and base_url config.", file=sys.stderr)
+        return 3
+    except json_module.JSONDecodeError:
+        print("Error: Invalid response from LLM API", file=sys.stderr)
+        return 3
+    except (RuntimeError, ValueError, TypeError, OSError):
+        logger.exception("Unhandled error while executing askfind query")
+        print(
+            "Error: Unexpected internal error. Run with --debug for details.",
+            file=sys.stderr,
+        )
+        return 3
 
 
 if __name__ == "__main__":
