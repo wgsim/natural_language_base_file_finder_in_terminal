@@ -163,7 +163,7 @@ refactor: simplify walker logic
 ### Testing
 
 - **Philosophy**: Test-Driven Development (TDD)
-- **Coverage**: CI gate is >=85%; recommended target is >90% when practical
+- **Coverage**: CI gate is >=90%; recommended target is >95% when practical
 - **Test Types**: Unit tests for all modules
 - **Test Naming**: `test_<what>_<condition>_<expected>`
 
