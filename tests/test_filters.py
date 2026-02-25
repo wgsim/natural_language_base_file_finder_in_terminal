@@ -1,8 +1,5 @@
 """Tests for search filter dataclass and matching logic."""
 
-import os
-import time
-from pathlib import Path
 
 from askfind.search.filters import SearchFilters, parse_size, parse_time_delta
 

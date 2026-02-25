@@ -1,9 +1,8 @@
 """Tests for configuration management."""
 
 import os
-import tomllib
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 from askfind.config import Config, get_api_key, get_config_path
 

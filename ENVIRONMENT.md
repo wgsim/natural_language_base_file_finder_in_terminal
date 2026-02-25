@@ -7,7 +7,7 @@ This project uses a dedicated Conda environment defined in [`environment.yml`](.
 - Name: `askfind_env`
 - Python: `3.12`
 - Source of pinned runtime deps: [`requirements.txt`](./requirements.txt)
-- Dev/test tools included: `pytest`, `pytest-cov`, `pip-audit`
+- Dev/test tools included: `pytest`, `pytest-cov`, `ruff`, `pip-audit`
 
 ## Create Environment
 
@@ -28,12 +28,13 @@ conda activate askfind_env
 ```bash
 python --version
 python -m askfind --help
+ruff check src tests
 PYTHONPATH=src pytest -q
 ```
 
 ## Hooks Integration
 
-- Shared git hooks in `.githooks/` run tests in `askfind_env` by default.
+- Shared git hooks in `.githooks/` run lint+tests in `askfind_env` by default.
 - If `askfind_env` is missing, hooks fall back to `pytest_env` when available.
 
 ## Reproducibility Notes

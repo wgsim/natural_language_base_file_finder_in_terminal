@@ -1,7 +1,6 @@
 """Tests for output formatting."""
 
 import json
-from pathlib import Path
 
 from askfind.output.formatter import format_plain, format_verbose, format_json, FileResult
 
