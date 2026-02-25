@@ -120,3 +120,7 @@ src/*.egg-info/
 
 # Session files
 SESSION_SUMMARY.md
+
+# Local lock artifacts (policy: generated locally, not committed)
+environment.lock.yml
+environment.lock.txt

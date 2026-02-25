@@ -5,15 +5,18 @@ from __future__ import annotations
 
 import re
 import shlex
+import subprocess
 import sys
 import tomllib
 from pathlib import Path
 
 TOOLS = ("pytest", "pytest-cov", "mypy", "ruff", "pip-audit")
+LOCK_FILES = ("environment.lock.yml", "environment.lock.txt")
 ROOT = Path(__file__).resolve().parents[2]
 CI_FILE = ROOT / ".github" / "workflows" / "ci.yml"
 ENV_FILE = ROOT / "environment.yml"
 PYPROJECT_FILE = ROOT / "pyproject.toml"
+GITIGNORE_FILE = ROOT / ".gitignore"
 
 
 def _parse_spec_token(token: str) -> tuple[str, str, str] | None:
@@ -118,20 +121,62 @@ def _compare_sources(
     return errors
 
 
+def _read_gitignore_entries(text: str) -> set[str]:
+    entries: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        entries.add(stripped)
+    return entries
+
+
+def _collect_tracked_lock_files() -> set[str]:
+    tracked: set[str] = set()
+    for lock_file in LOCK_FILES:
+        result = subprocess.run(
+            ["git", "ls-files", "--error-unmatch", lock_file],
+            cwd=ROOT,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+        if result.returncode == 0:
+            tracked.add(lock_file)
+    return tracked
+
+
+def _validate_lock_file_policy(
+    gitignore_entries: set[str],
+    tracked_lock_files: set[str],
+) -> list[str]:
+    errors: list[str] = []
+    for lock_file in LOCK_FILES:
+        if lock_file not in gitignore_entries:
+            errors.append(f".gitignore: missing lock policy entry for {lock_file}")
+        if lock_file in tracked_lock_files:
+            errors.append(f"lock file must not be tracked: {lock_file}")
+    return errors
+
+
 def main() -> int:
     ci_text = CI_FILE.read_text(encoding="utf-8")
     env_text = ENV_FILE.read_text(encoding="utf-8")
+    gitignore_text = GITIGNORE_FILE.read_text(encoding="utf-8")
     pyproject_data = tomllib.loads(PYPROJECT_FILE.read_text(encoding="utf-8"))
 
     ci_pins = _extract_ci_pins(ci_text)
     env_pins = _extract_environment_pins(env_text)
     pyproject_pins = _extract_pyproject_pins(pyproject_data)
+    gitignore_entries = _read_gitignore_entries(gitignore_text)
+    tracked_lock_files = _collect_tracked_lock_files()
 
     errors = []
     errors.extend(_validate_source("ci.yml", ci_pins))
     errors.extend(_validate_source("environment.yml", env_pins))
     errors.extend(_validate_source("pyproject.toml", pyproject_pins))
     errors.extend(_compare_sources(env_pins, ci_pins, pyproject_pins))
+    errors.extend(_validate_lock_file_policy(gitignore_entries, tracked_lock_files))
 
     if errors:
         print("dev tool pin check failed:")
@@ -142,6 +187,8 @@ def main() -> int:
     print("dev tool pin check passed:")
     for tool in TOOLS:
         print(f"- {tool}{env_pins[tool]}")
+    for lock_file in LOCK_FILES:
+        print(f"- lock policy: {lock_file} ignored and untracked")
     return 0
 
 
