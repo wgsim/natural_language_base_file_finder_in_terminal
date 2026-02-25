@@ -11,7 +11,7 @@ class TestDetectMultiplexer:
     def test_detects_tmux(self):
         assert detect_multiplexer() == Multiplexer.TMUX
 
-    @patch.dict(os.environ, {"ZELLIJ_SESSION_NAME": "mysession"})
+    @patch.dict(os.environ, {"ZELLIJ_SESSION_NAME": "mysession"}, clear=True)
     def test_detects_zellij(self):
         assert detect_multiplexer() == Multiplexer.ZELLIJ
 

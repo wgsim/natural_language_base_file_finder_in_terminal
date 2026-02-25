@@ -1,7 +1,7 @@
 """Tests for semantic re-ranking."""
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from askfind.output.formatter import FileResult
 from askfind.search.reranker import rerank_results

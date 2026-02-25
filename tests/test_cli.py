@@ -4,7 +4,6 @@ import httpx
 from unittest.mock import patch, MagicMock
 
 from askfind.cli import _validate_base_url, build_parser, main
-from askfind.search.filters import SearchFilters
 
 
 class TestBuildParser:

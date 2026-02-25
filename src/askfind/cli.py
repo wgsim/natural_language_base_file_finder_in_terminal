@@ -285,11 +285,11 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nSearch cancelled.", file=sys.stderr)
         return 130
-    except FileNotFoundError as e:
+    except FileNotFoundError:
         print(f"Error: Search root not found: {root_value}", file=sys.stderr)
         return 3
-    except PermissionError as e:
-        print(f"Error: Permission denied accessing search root", file=sys.stderr)
+    except PermissionError:
+        print("Error: Permission denied accessing search root", file=sys.stderr)
         return 3
     except Exception as e:
         import httpx
@@ -300,10 +300,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Error: API request failed (HTTP {e.response.status_code})", file=sys.stderr)
             return 3
         elif isinstance(e, (httpx.ConnectError, httpx.TimeoutException)):
-            print(f"Error: Cannot connect to API server. Check your network and base_url config.", file=sys.stderr)
+            print("Error: Cannot connect to API server. Check your network and base_url config.", file=sys.stderr)
             return 3
         elif isinstance(e, json_module.JSONDecodeError):
-            print(f"Error: Invalid response from LLM API", file=sys.stderr)
+            print("Error: Invalid response from LLM API", file=sys.stderr)
             return 3
         else:
             # For unexpected errors, show type but not full details

@@ -240,13 +240,14 @@ This repository includes shared git hooks under `.githooks/`.
 git config core.hooksPath .githooks
 ```
 
-After setup, both `pre-commit` and `pre-push` run tests using:
+After setup, both `pre-commit` and `pre-push` run lint+tests using:
 
 ```bash
-conda run -n askfind_env sh -lc 'PYTHONPATH=src pytest -q'
+conda run -n askfind_env sh -lc 'ruff check src tests && PYTHONPATH=src pytest -q'
 ```
 
-If `askfind_env` is not available, hooks fall back to `./pytest_env/bin/pytest`.
+If `askfind_env` is not available, hooks fall back to `./pytest_env/bin/ruff` and
+`./pytest_env/bin/pytest`.
 
 ### Contributing
 
