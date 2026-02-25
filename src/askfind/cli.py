@@ -306,8 +306,11 @@ def main(argv: list[str] | None = None) -> int:
             print("Error: Invalid response from LLM API", file=sys.stderr)
             return 3
         else:
-            # For unexpected errors, show type but not full details
-            print(f"Error: {type(e).__name__}: {str(e)[:100]}", file=sys.stderr)
+            logger.exception("Unhandled error while executing askfind query")
+            print(
+                "Error: Unexpected internal error. Run with --debug for details.",
+                file=sys.stderr,
+            )
             return 3
 
 

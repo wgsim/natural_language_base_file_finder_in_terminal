@@ -11,6 +11,7 @@ from pathlib import Path
 
 # Maximum file size for content scanning (10 MB)
 MAX_CONTENT_SCAN_BYTES = 10 * 1024 * 1024
+CONTENT_SCAN_CHUNK_BYTES = 64 * 1024
 
 
 def parse_size(s: str) -> int:
@@ -40,6 +41,30 @@ def _parse_constraint(s: str) -> tuple[str, str]:
     if s.startswith("<"):
         return "<", s[1:]
     return "=", s
+
+
+def _file_contains_all_terms(filepath: Path, terms: list[str]) -> bool:
+    """Scan file in chunks and return True when all terms are found."""
+    pending_terms = set(terms)
+    max_term_len = max(len(term) for term in pending_terms)
+    overlap = max(0, max_term_len - 1)
+    tail = ""
+
+    with filepath.open("rb") as handle:
+        while True:
+            chunk = handle.read(CONTENT_SCAN_CHUNK_BYTES)
+            if not chunk:
+                break
+
+            text = tail + chunk.decode("utf-8", errors="ignore")
+            matched = {term for term in pending_terms if term in text}
+            pending_terms -= matched
+            if not pending_terms:
+                return True
+
+            tail = text[-overlap:] if overlap else ""
+
+    return False
 
 
 @dataclass
@@ -200,8 +225,7 @@ class SearchFilters:
             file_size = filepath.stat().st_size
             if file_size > MAX_CONTENT_SCAN_BYTES:
                 return False
-            text = filepath.read_text(errors="ignore")
-            return all(term in text for term in self.has)
+            return _file_contains_all_terms(filepath, self.has)
         except (OSError, UnicodeDecodeError):
             return False
 

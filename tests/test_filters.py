@@ -1,6 +1,8 @@
 """Tests for search filter dataclass and matching logic."""
 
 
+from unittest.mock import patch
+
 from askfind.search.filters import SearchFilters, parse_size, parse_time_delta
 
 
@@ -133,6 +135,13 @@ class TestSearchFilters:
         f.write_text("# TODO: fix this\n# FIXME: later\n")
         filters = SearchFilters(has=["TODO", "FIXME"])
         assert filters.matches_content(f) is True
+
+    def test_has_content_matches_terms_across_chunk_boundaries(self, tmp_path):
+        f = tmp_path / "code.py"
+        f.write_text("A" * 7 + "TODO" + "B" * 7 + "FIXME")
+        filters = SearchFilters(has=["TODO", "FIXME"])
+        with patch("askfind.search.filters.CONTENT_SCAN_CHUNK_BYTES", 8):
+            assert filters.matches_content(f) is True
 
     def test_depth_filter(self):
         filters = SearchFilters(depth="<3")

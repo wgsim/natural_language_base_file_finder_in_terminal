@@ -657,7 +657,10 @@ class TestMainExceptionHandling:
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")
     @patch("askfind.cli.Config.from_file")
-    def test_unexpected_error_returns_3(self, mock_config_cls, mock_get_key, mock_llm_cls, capsys):
+    @patch("askfind.cli.logger.exception")
+    def test_unexpected_error_returns_3(
+        self, mock_log_exception, mock_config_cls, mock_get_key, mock_llm_cls, capsys
+    ):
         mock_config_cls.return_value = _make_mock_config()
         _setup_mock_llm_client(mock_llm_cls, extract_side_effect=RuntimeError("boom"))
 
@@ -665,4 +668,5 @@ class TestMainExceptionHandling:
         captured = capsys.readouterr()
 
         assert result == 3
-        assert "Error: RuntimeError: boom" in captured.err
+        assert "Error: Unexpected internal error. Run with --debug for details." in captured.err
+        mock_log_exception.assert_called_once()
