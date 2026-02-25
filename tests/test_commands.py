@@ -64,7 +64,11 @@ class TestCopyContent:
         file_path.write_text("x")
         result = FileResult.from_path(file_path)
 
-        with patch.object(type(result.path), "stat", return_value=SimpleNamespace(st_size=MAX_CLIPBOARD_SIZE + 1)):
+        with patch.object(
+            type(result.path),
+            "stat",
+            return_value=SimpleNamespace(st_size=MAX_CLIPBOARD_SIZE + 1, st_mode=0o100644),
+        ):
             copy_content(result)
 
         mock_clipboard.assert_not_called()
@@ -103,7 +107,11 @@ class TestPreview:
         file_path.write_text("x")
         result = FileResult.from_path(file_path)
 
-        with patch.object(type(result.path), "stat", return_value=SimpleNamespace(st_size=MAX_PREVIEW_SIZE + 1)):
+        with patch.object(
+            type(result.path),
+            "stat",
+            return_value=SimpleNamespace(st_size=MAX_PREVIEW_SIZE + 1, st_mode=0o100644),
+        ):
             preview(result)
 
         mock_print.assert_called_once()
