@@ -81,7 +81,9 @@ def open_in_editor(result: FileResult, editor: str = "vim") -> None:
         return
 
     try:
-        subprocess.run([editor_path, str(result.path)], check=False)
+        completed = subprocess.run([editor_path, str(result.path)], check=False)
+        if completed.returncode != 0:
+            console.print(f"[red]Editor exited with code {completed.returncode}[/red]")
     except (OSError, subprocess.SubprocessError) as e:
         console.print(f"[red]Error opening editor: {e}[/red]")
 

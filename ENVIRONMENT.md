@@ -28,6 +28,7 @@ conda activate askfind_env
 ```bash
 python --version
 python -m askfind --help
+python scripts/ci/check_dev_tool_pins.py
 python -m mypy src
 ruff check src tests
 PYTHONPATH=src pytest -q --cov=src/askfind --cov-fail-under=95

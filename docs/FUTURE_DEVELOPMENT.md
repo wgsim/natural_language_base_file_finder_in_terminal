@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.0** (Current) - Initial release with core functionality
+- **v0.1.1** (Current) - CI hardening and quality gate improvements
+- **v0.1.0** - Initial release with core functionality
 
 ## Roadmap
 
@@ -158,8 +159,8 @@
 ## Technical Debt
 
 ### Code Quality
-- [ ] Add type checking with mypy
-- [ ] Increase test coverage to 95%+
+- [x] Add type checking with mypy
+- [x] Increase test coverage to 95%+
 - [ ] Add mutation testing
 - [ ] Refactor large functions (walker.py)
 - [ ] Extract magic numbers to constants
@@ -349,4 +350,4 @@ Have ideas for the future of askfind? Open a discussion on GitHub!
 
 ---
 
-*This document is updated quarterly. Last updated: 2026-02-02*
+*This document is updated quarterly. Last updated: 2026-02-25*
