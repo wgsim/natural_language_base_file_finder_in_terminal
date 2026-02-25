@@ -106,7 +106,7 @@ class SearchFilters:
     type: str | None = None
     depth: str | None = None
     perm: str | None = None
-    _compiled_regex: re.Pattern | None = field(default=None, init=False, repr=False)
+    _compiled_regex: re.Pattern[str] | None = field(default=None, init=False, repr=False)
     _ext_lower: frozenset[str] | None = field(default=None, init=False, repr=False)
     _not_ext_lower: frozenset[str] | None = field(default=None, init=False, repr=False)
 

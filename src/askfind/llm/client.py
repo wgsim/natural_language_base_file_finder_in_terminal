@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+from types import TracebackType
+from typing import TypedDict, cast
+
 import httpx
 
 from askfind.llm.prompt import build_system_prompt
+
+
+class _ChatMessage(TypedDict):
+    content: str
+
+
+class _ChatChoice(TypedDict):
+    message: _ChatMessage
+
+
+class _ChatResponse(TypedDict):
+    choices: list[_ChatChoice]
 
 
 class LLMClient:
@@ -35,7 +50,7 @@ class LLMClient:
             },
         )
         response.raise_for_status()
-        data = response.json()
+        data = cast(_ChatResponse, response.json())
         return data["choices"][0]["message"]["content"]
 
     def rerank(self, query: str, file_list: list[str]) -> list[str]:
@@ -55,7 +70,7 @@ class LLMClient:
             },
         )
         response.raise_for_status()
-        data = response.json()
+        data = cast(_ChatResponse, response.json())
         content = data["choices"][0]["message"]["content"].strip()
         ranked = [line.strip() for line in content.splitlines() if line.strip()]
         # Only return paths that were in the original list
@@ -69,6 +84,11 @@ class LLMClient:
         """Support context manager protocol."""
         return self
 
-    def __exit__(self, *exc_info) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
         """Ensure HTTP client is closed when exiting context."""
         self.close()
