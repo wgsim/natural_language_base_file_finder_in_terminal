@@ -1,8 +1,13 @@
 """Tests for LLM response parsing."""
 
 import json
+from unittest.mock import patch
 
-from askfind.llm.parser import parse_llm_response
+from askfind.llm.parser import (
+    _extract_json,
+    _validate_and_sanitize_value,
+    parse_llm_response,
+)
 from askfind.search.filters import SearchFilters
 
 
@@ -46,6 +51,16 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters == SearchFilters()
 
+    def test_invalid_json_object_returns_empty_filters(self):
+        raw = '{"ext": [".py",}'
+        filters = parse_llm_response(raw)
+        assert filters == SearchFilters()
+
+    def test_non_object_json_returns_empty_filters(self):
+        raw = '["not", "an", "object"]'
+        filters = parse_llm_response(raw)
+        assert filters == SearchFilters()
+
     def test_has_as_single_string_converted_to_list(self):
         raw = '{"has": "TODO"}'
         filters = parse_llm_response(raw)
@@ -60,6 +75,16 @@ class TestParseLlmResponse:
         raw = '{"ext": ".py"}'
         filters = parse_llm_response(raw)
         assert filters.ext == [".py"]
+
+    def test_rejects_non_list_ext_type(self):
+        raw = '{"ext": 42}'
+        filters = parse_llm_response(raw)
+        assert filters.ext is None
+
+    def test_rejects_empty_list_terms_after_normalization(self):
+        raw = '{"has": ["", "   "]}'
+        filters = parse_llm_response(raw)
+        assert filters.has is None
 
     def test_multiple_filters_combined(self):
         """Should handle multiple filters in one query."""
@@ -92,6 +117,17 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters.path is None
 
+    def test_rejects_non_string_path_values(self):
+        raw = '{"path": 123}'
+        filters = parse_llm_response(raw)
+        assert filters.path is None
+
+    def test_handles_path_constructor_exceptions(self):
+        with patch("askfind.llm.parser.Path", side_effect=ValueError("bad path")):
+            raw = '{"path": "src"}'
+            filters = parse_llm_response(raw)
+            assert filters.path is None
+
     def test_truncates_list_fields_to_max_length(self):
         ext_list = [f".ext{i}" for i in range(30)]
         raw = json.dumps({"ext": ext_list})
@@ -111,6 +147,23 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters.type is None
 
+    def test_rejects_non_string_name_fields(self):
+        raw = '{"name": 1, "not_name": 2, "regex": 3, "fuzzy": 4}'
+        filters = parse_llm_response(raw)
+        assert filters.name is None
+        assert filters.not_name is None
+        assert filters.regex is None
+        assert filters.fuzzy is None
+
+    def test_rejects_non_string_type_perm_depth_size_mod(self):
+        raw = '{"type": 1, "perm": 2, "depth": 3, "size": 4, "mod": 5}'
+        filters = parse_llm_response(raw)
+        assert filters.type is None
+        assert filters.perm is None
+        assert filters.depth is None
+        assert filters.size is None
+        assert filters.mod is None
+
     def test_rejects_invalid_permission_values(self):
         raw = '{"perm": "rwa"}'
         filters = parse_llm_response(raw)
@@ -126,18 +179,65 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters.depth is None
 
+    def test_rejects_empty_depth_constraint(self):
+        raw = '{"depth": "<"}'
+        filters = parse_llm_response(raw)
+        assert filters.depth is None
+
+    def test_rejects_out_of_range_depth_constraint(self):
+        raw = '{"depth": "4096"}'
+        filters = parse_llm_response(raw)
+        assert filters.depth is None
+
     def test_rejects_invalid_size_constraint(self):
         raw = '{"size": "many"}'
         filters = parse_llm_response(raw)
         assert filters.size is None
+
+    def test_rejects_empty_size_constraint(self):
+        raw = '{"size": ">"}'
+        filters = parse_llm_response(raw)
+        assert filters.size is None
+
+    def test_rejects_negative_and_too_large_size_constraint(self):
+        raw = '{"size": "-1", "mod": ">1d"}'
+        filters = parse_llm_response(raw)
+        assert filters.size is None
+        raw2 = '{"size": "2000000TB"}'
+        filters2 = parse_llm_response(raw2)
+        assert filters2.size is None
 
     def test_rejects_invalid_mod_constraint(self):
         raw = '{"mod": ">0d"}'
         filters = parse_llm_response(raw)
         assert filters.mod is None
 
+    def test_rejects_empty_and_unparseable_mod_constraint(self):
+        raw = '{"mod": ">"}'
+        filters = parse_llm_response(raw)
+        assert filters.mod is None
+        raw2 = '{"mod": "abc"}'
+        filters2 = parse_llm_response(raw2)
+        assert filters2.mod is None
+
     def test_extracts_balanced_json_with_nested_braces(self):
         raw = 'prefix {"name": "literal { brace }", "ext": [".py"]} suffix'
         filters = parse_llm_response(raw)
         assert filters.name == "literal { brace }"
         assert filters.ext == [".py"]
+
+    def test_extract_json_handles_escaped_quotes(self):
+        raw = 'prefix {"name":"a\\\\\\"b","ext":[".py"]} suffix'
+        filters = parse_llm_response(raw)
+        assert filters.ext == [".py"]
+
+    def test_extract_json_returns_none_for_unbalanced_braces(self):
+        raw = 'prefix {"ext": [".py"]'
+        filters = parse_llm_response(raw)
+        assert filters == SearchFilters()
+
+    def test_unknown_key_type_branch_returns_none(self):
+        assert _validate_and_sanitize_value("unknown_key", "value") is None
+
+    def test_extract_json_returns_none_without_object(self):
+        assert _extract_json("there is no json here") is None

@@ -234,7 +234,7 @@ conda run -n askfind_env pytest tests/test_filters.py -v
 conda run -n askfind_env pytest tests/ --cov=askfind --cov-report=html
 ```
 
-CI enforces a minimum coverage gate of 85%. Aim higher (for example, 90%+) when practical.
+CI enforces a minimum coverage gate of 90%. Aim higher (for example, 95%+) when practical.
 
 ### Git Hooks
 
