@@ -63,10 +63,10 @@ class TestParseLlmResponse:
 
     def test_multiple_filters_combined(self):
         """Should handle multiple filters in one query."""
-        raw = '{"ext": [".py", ".js"], "type": "f", "depth": "<3"}'
+        raw = '{"ext": [".py", ".js"], "type": "file", "depth": "<3"}'
         filters = parse_llm_response(raw)
         assert filters.ext == [".py", ".js"]
-        assert filters.type == "f"
+        assert filters.type == "file"
         assert filters.depth == "<3"
 
     def test_rejects_absolute_path_values(self):
@@ -81,6 +81,17 @@ class TestParseLlmResponse:
         assert filters.path is None
         assert filters.not_path is None
 
+    def test_rejects_parent_only_path_values(self):
+        raw = '{"path": "..", "not_path": "src/.."}'
+        filters = parse_llm_response(raw)
+        assert filters.path is None
+        assert filters.not_path is None
+
+    def test_rejects_home_expansion_path_values(self):
+        raw = '{"path": "~/.ssh"}'
+        filters = parse_llm_response(raw)
+        assert filters.path is None
+
     def test_truncates_list_fields_to_max_length(self):
         ext_list = [f".ext{i}" for i in range(30)]
         raw = json.dumps({"ext": ext_list})
@@ -94,6 +105,36 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters.has == ["x" * 200]
         assert filters.name == "x" * 200
+
+    def test_rejects_invalid_type_values(self):
+        raw = '{"type": "f"}'
+        filters = parse_llm_response(raw)
+        assert filters.type is None
+
+    def test_rejects_invalid_permission_values(self):
+        raw = '{"perm": "rwa"}'
+        filters = parse_llm_response(raw)
+        assert filters.perm is None
+
+    def test_normalizes_permission_values(self):
+        raw = '{"perm": "xwr"}'
+        filters = parse_llm_response(raw)
+        assert filters.perm == "rwx"
+
+    def test_rejects_invalid_depth_constraint(self):
+        raw = '{"depth": ">>3"}'
+        filters = parse_llm_response(raw)
+        assert filters.depth is None
+
+    def test_rejects_invalid_size_constraint(self):
+        raw = '{"size": "many"}'
+        filters = parse_llm_response(raw)
+        assert filters.size is None
+
+    def test_rejects_invalid_mod_constraint(self):
+        raw = '{"mod": ">0d"}'
+        filters = parse_llm_response(raw)
+        assert filters.mod is None
 
     def test_extracts_balanced_json_with_nested_braces(self):
         raw = 'prefix {"name": "literal { brace }", "ext": [".py"]} suffix'

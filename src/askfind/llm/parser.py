@@ -5,16 +5,68 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import fields
+from datetime import timedelta
 from pathlib import Path
+from typing import Any
 
-from askfind.search.filters import SearchFilters
+from askfind.search.filters import SearchFilters, parse_size, parse_time_delta
 
 _LIST_FIELDS = {"ext", "not_ext", "has"}
 _MAX_LIST_LENGTH = 20  # Maximum items in list fields
 _MAX_TERM_LENGTH = 200  # Maximum length of individual terms
+_VALID_TYPE_VALUES = {"file", "dir", "link"}
+_VALID_PERM_VALUES = {"r", "w", "x"}
+_MAX_DEPTH = 1024
+_MAX_SIZE_FILTER_BYTES = 1024**5  # 1 PB
+_MAX_MOD_DELTA = timedelta(days=36500)  # ~100 years
 
 
-def _validate_and_sanitize_value(key: str, value: any) -> any | None:
+def _split_constraint(value: str) -> tuple[str, str]:
+    if value.startswith((">", "<")):
+        return value[0], value[1:]
+    return "", value
+
+
+def _validate_depth_value(value: str) -> str | None:
+    op, raw = _split_constraint(value.strip())
+    if not raw:
+        return None
+    try:
+        depth = int(raw)
+    except ValueError:
+        return None
+    if depth < 0 or depth > _MAX_DEPTH:
+        return None
+    return f"{op}{depth}" if op else str(depth)
+
+
+def _validate_size_value(value: str) -> str | None:
+    op, raw = _split_constraint(value.strip().upper())
+    if not raw:
+        return None
+    try:
+        size = parse_size(raw)
+    except (ValueError, OverflowError):
+        return None
+    if size < 0 or size > _MAX_SIZE_FILTER_BYTES:
+        return None
+    return f"{op}{raw}" if op else raw
+
+
+def _validate_mod_value(value: str) -> str | None:
+    op, raw = _split_constraint(value.strip().lower())
+    if not raw:
+        return None
+    try:
+        delta = parse_time_delta(raw)
+    except (ValueError, OverflowError):
+        return None
+    if delta <= timedelta(0) or delta > _MAX_MOD_DELTA:
+        return None
+    return f"{op}{raw}" if op else raw
+
+
+def _validate_and_sanitize_value(key: str, value: Any) -> Any | None:
     """Validate and sanitize field values from LLM response.
 
     Returns sanitized value or None if invalid.
@@ -27,7 +79,8 @@ def _validate_and_sanitize_value(key: str, value: any) -> any | None:
             return None
         # Limit list length and term length
         value = value[:_MAX_LIST_LENGTH]
-        value = [str(v)[:_MAX_TERM_LENGTH] for v in value if v]
+        value = [str(v).strip()[:_MAX_TERM_LENGTH] for v in value if v]
+        value = [v for v in value if v]
         if not value:
             return None
         return value
@@ -36,27 +89,57 @@ def _validate_and_sanitize_value(key: str, value: any) -> any | None:
     if key in ("path", "not_path"):
         if not isinstance(value, str):
             return None
-        value = str(value)[:_MAX_TERM_LENGTH]
+        value = str(value).strip()[:_MAX_TERM_LENGTH]
         # Convert to relative path and normalize
         try:
             p = Path(value)
             # Reject absolute paths
-            if p.is_absolute():
+            if p.is_absolute() or value.startswith("~") or "\x00" in value:
                 return None
-            # Reject paths with parent directory references that escape root
-            normalized = p.as_posix()
-            if normalized.startswith("../") or "/../" in normalized:
+            # Reject any parent references
+            if any(part == ".." for part in p.parts):
                 return None
-            return value
+            return p.as_posix()
         except (ValueError, OSError):
             return None
 
     # Validate string fields
-    if key in ("name", "not_name", "regex", "fuzzy", "mod", "size", "depth",
-               "type", "perm"):
+    if key in ("name", "not_name", "regex", "fuzzy"):
         if not isinstance(value, str):
             return None
-        return str(value)[:_MAX_TERM_LENGTH]
+        return str(value).strip()[:_MAX_TERM_LENGTH]
+
+    if key == "type":
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip().lower()
+        if normalized not in _VALID_TYPE_VALUES:
+            return None
+        return normalized
+
+    if key == "perm":
+        if not isinstance(value, str):
+            return None
+        normalized = value.strip().lower()
+        if not normalized or any(ch not in _VALID_PERM_VALUES for ch in normalized):
+            return None
+        # Preserve canonical order and de-duplicate
+        return "".join(ch for ch in "rwx" if ch in normalized)
+
+    if key == "depth":
+        if not isinstance(value, str):
+            return None
+        return _validate_depth_value(value)
+
+    if key == "size":
+        if not isinstance(value, str):
+            return None
+        return _validate_size_value(value)
+
+    if key == "mod":
+        if not isinstance(value, str):
+            return None
+        return _validate_mod_value(value)
 
     # Unknown field type - reject
     return None
