@@ -58,7 +58,7 @@ Feature suggestions are welcome! Please:
 1. **Write Tests First** (TDD approach)
    ```bash
    # Write failing tests in tests/
-   pytest tests/test_your_feature.py -v
+   conda run -n askfind_env pytest tests/test_your_feature.py -v
    ```
 
 2. **Implement Feature**
@@ -70,11 +70,14 @@ Feature suggestions are welcome! Please:
 3. **Run Tests**
    ```bash
    # Run all tests
-   pytest tests/ -v
+   conda run -n askfind_env pytest tests/ -v
 
    # Run with coverage
-   pytest tests/ --cov=askfind --cov-report=html
+   conda run -n askfind_env pytest tests/ --cov=askfind --cov-report=html
    ```
+
+   If conda is unavailable locally, replace `conda run -n askfind_env pytest` with
+   `./pytest_env/bin/pytest`.
 
 4. **Check Code Quality**
    ```bash
@@ -128,7 +131,7 @@ refactor: simplify walker logic
 
 2. **Ensure Tests Pass**
    ```bash
-   pytest tests/ -v
+   conda run -n askfind_env pytest tests/ -v
    ```
    All tests must pass before merging.
 
@@ -160,7 +163,7 @@ refactor: simplify walker logic
 ### Testing
 
 - **Philosophy**: Test-Driven Development (TDD)
-- **Coverage**: Aim for >90% coverage
+- **Coverage**: CI gate is >=85%; recommended target is >90% when practical
 - **Test Types**: Unit tests for all modules
 - **Test Naming**: `test_<what>_<condition>_<expected>`
 

@@ -1,9 +1,33 @@
 """Tests for CLI argument parsing and entry point."""
 
+import json
+import types
 import httpx
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from askfind.cli import _validate_base_url, build_parser, main
+
+
+def _make_mock_config(default_root="."):
+    mock_config = MagicMock()
+    mock_config.base_url = "https://api.example.com"
+    mock_config.model = "test-model"
+    mock_config.default_root = str(default_root)
+    mock_config.max_results = 50
+    mock_config.editor = "vim"
+    return mock_config
+
+
+def _setup_mock_llm_client(mock_llm_cls, raw_response='{"ext": [".py"]}', extract_side_effect=None):
+    mock_client = MagicMock()
+    if extract_side_effect is None:
+        mock_client.extract_filters.return_value = raw_response
+    else:
+        mock_client.extract_filters.side_effect = extract_side_effect
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=None)
+    mock_llm_cls.return_value = mock_client
+    return mock_client
 
 
 class TestBuildParser:
@@ -63,6 +87,16 @@ class TestValidateBaseUrl:
         is_valid, error = _validate_base_url("http://localhost:11434/v1")
         assert is_valid is True
         assert error == ""
+
+    def test_rejects_invalid_scheme(self):
+        is_valid, error = _validate_base_url("ftp://example.com")
+        assert is_valid is False
+        assert "http:// or https://" in error
+
+    def test_handles_urlparse_exception(self):
+        is_valid, error = _validate_base_url(123)  # type: ignore[arg-type]
+        assert is_valid is False
+        assert "Invalid URL format" in error
 
 
 class TestMain:
@@ -236,3 +270,399 @@ class TestConfigSubcommand:
 
         result = main(["config", "models"])
         assert result == 3
+
+
+class TestConfigSubcommandAdditional:
+    @patch("askfind.cli.get_api_key", return_value="sk-test-1234")
+    @patch("askfind.cli.Config.from_file")
+    def test_config_show_returns_0(self, mock_config_cls, mock_get_key):
+        mock_config_cls.return_value = _make_mock_config()
+
+        mock_console = MagicMock()
+        mock_table = MagicMock()
+        console_module = types.ModuleType("rich.console")
+        table_module = types.ModuleType("rich.table")
+        console_module.Console = MagicMock(return_value=mock_console)
+        table_module.Table = MagicMock(return_value=mock_table)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "rich": types.ModuleType("rich"),
+                "rich.console": console_module,
+                "rich.table": table_module,
+            },
+        ):
+            result = main(["config", "show"])
+
+        assert result == 0
+        mock_table.add_row.assert_any_call("api_key", "****1234")
+        mock_console.print.assert_called_once_with(mock_table)
+
+    @patch("askfind.cli.set_api_key")
+    @patch("getpass.getpass", return_value="sk-new")
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_key_success(self, mock_config_cls, mock_getpass, mock_set_api_key, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+
+        result = main(["config", "set-key"])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        mock_getpass.assert_called_once()
+        mock_set_api_key.assert_called_once_with("sk-new")
+        assert "API key stored in system keychain." in captured.out
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.get")
+    def test_config_models_success_returns_0(self, mock_get, mock_get_key, mock_config_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [{"id": "model-a"}, {"id": "model-b"}, {"id": "unknown-idless"}]
+        }
+        mock_get.return_value = mock_response
+
+        result = main(["config", "models"])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "model-a" in captured.out
+        assert "model-b" in captured.out
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.get", side_effect=httpx.ConnectError("connection failed"))
+    def test_config_models_connect_error_returns_3(self, mock_get, mock_get_key, mock_config_cls, capsys):
+        mock_config = _make_mock_config()
+        mock_config_cls.return_value = mock_config
+
+        result = main(["config", "models"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert f"Cannot connect to API server at {mock_config.base_url}" in captured.err
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.get", side_effect=httpx.TimeoutException("timed out"))
+    def test_config_models_timeout_error_returns_3(self, mock_get, mock_get_key, mock_config_cls, capsys):
+        mock_config = _make_mock_config()
+        mock_config_cls.return_value = mock_config
+
+        result = main(["config", "models"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert f"Cannot connect to API server at {mock_config.base_url}" in captured.err
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.get", side_effect=RuntimeError("boom"))
+    def test_config_models_generic_exception_returns_3(self, mock_get, mock_get_key, mock_config_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+
+        result = main(["config", "models"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert "Error: RuntimeError" in captured.err
+
+
+class TestMainAdditionalBranches:
+    @patch("askfind.interactive.session.InteractiveSession")
+    @patch("askfind.cli.Config.from_file")
+    def test_interactive_session_flag_runs_session(self, mock_config_cls, mock_session_cls, tmp_path):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config_cls.return_value = mock_config
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+
+        result = main(["--interactive-session", "--root", str(tmp_path)])
+
+        assert result == 0
+        mock_session_cls.assert_called_once_with(mock_config, tmp_path.resolve())
+        mock_session.run.assert_called_once()
+
+    @patch("askfind.interactive.session.InteractiveSession")
+    @patch("askfind.interactive.pane.spawn_interactive_pane", return_value=True)
+    @patch("askfind.cli.Config.from_file")
+    def test_interactive_pane_spawned_returns_0(
+        self, mock_config_cls, mock_spawn, mock_session_cls, tmp_path
+    ):
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+
+        result = main(["-i"])
+
+        assert result == 0
+        mock_spawn.assert_called_once()
+        mock_session_cls.assert_not_called()
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_api_key_flag_prints_warning(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path, capsys
+    ):
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--api-key", "sk-inline", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 1
+        assert "Warning: --api-key exposes your key" in captured.err
+        mock_get_key.assert_called_once_with(cli_key="sk-inline")
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_query_too_long_returns_2(self, mock_config_cls, mock_get_key, mock_llm_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        result = main(["x" * 1001])
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "maximum length of 1000" in captured.err
+        mock_llm_cls.assert_not_called()
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_no_results_returns_1(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path
+    ):
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--root", str(tmp_path)])
+
+        assert result == 1
+
+    @patch("askfind.search.reranker.rerank_results")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_no_rerank_flag_skips_reranker(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_rerank,
+        tmp_path,
+    ):
+        file_a = tmp_path / "a.py"
+        file_b = tmp_path / "b.py"
+        file_a.write_text("a")
+        file_b.write_text("b")
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_walk.return_value = [file_a, file_b]
+
+        result = main(["query", "--no-rerank", "--root", str(tmp_path)])
+
+        assert result == 0
+        mock_rerank.assert_not_called()
+
+    @patch("askfind.cli.format_plain", return_value="plain-output")
+    @patch("askfind.cli.format_verbose", return_value="verbose-output")
+    @patch("askfind.cli.format_json", return_value="json-output")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_json_output_uses_json_formatter(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_format_json,
+        mock_format_verbose,
+        mock_format_plain,
+        tmp_path,
+        capsys,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_walk.return_value = [file_a]
+
+        result = main(["query", "--json", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert captured.out.strip() == "json-output"
+        mock_format_json.assert_called_once()
+        mock_format_verbose.assert_not_called()
+        mock_format_plain.assert_not_called()
+
+    @patch("askfind.cli.format_plain", return_value="plain-output")
+    @patch("askfind.cli.format_verbose", return_value="verbose-output")
+    @patch("askfind.cli.format_json", return_value="json-output")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_verbose_output_uses_verbose_formatter(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_format_json,
+        mock_format_verbose,
+        mock_format_plain,
+        tmp_path,
+        capsys,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_walk.return_value = [file_a]
+
+        result = main(["query", "--verbose", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert captured.out.strip() == "verbose-output"
+        mock_format_verbose.assert_called_once()
+        mock_format_json.assert_not_called()
+        mock_format_plain.assert_not_called()
+
+
+class TestMainExceptionHandling:
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_keyboard_interrupt_returns_130(self, mock_config_cls, mock_get_key, mock_llm_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        _setup_mock_llm_client(mock_llm_cls, extract_side_effect=KeyboardInterrupt())
+
+        result = main(["query"])
+        captured = capsys.readouterr()
+
+        assert result == 130
+        assert "Search cancelled." in captured.err
+
+    @patch("askfind.cli.walk_and_filter", side_effect=FileNotFoundError())
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_file_not_found_returns_3(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, capsys
+    ):
+        mock_config_cls.return_value = _make_mock_config()
+        _setup_mock_llm_client(mock_llm_cls)
+
+        missing_root = "/definitely/missing/path"
+        result = main(["query", "--root", missing_root])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert missing_root in captured.err
+
+    @patch("askfind.cli.walk_and_filter", side_effect=PermissionError())
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_permission_error_returns_3(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, capsys
+    ):
+        mock_config_cls.return_value = _make_mock_config()
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert "Permission denied accessing search root" in captured.err
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_http_status_error_returns_3(self, mock_config_cls, mock_get_key, mock_llm_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        mock_response = MagicMock()
+        mock_response.status_code = 503
+        error = httpx.HTTPStatusError("bad status", request=MagicMock(), response=mock_response)
+        _setup_mock_llm_client(mock_llm_cls, extract_side_effect=error)
+
+        result = main(["query"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert "HTTP 503" in captured.err
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_connect_error_returns_3(self, mock_config_cls, mock_get_key, mock_llm_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        _setup_mock_llm_client(mock_llm_cls, extract_side_effect=httpx.ConnectError("connect fail"))
+
+        result = main(["query"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert "Cannot connect to API server" in captured.err
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_timeout_exception_returns_3(self, mock_config_cls, mock_get_key, mock_llm_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        _setup_mock_llm_client(mock_llm_cls, extract_side_effect=httpx.TimeoutException("timeout"))
+
+        result = main(["query"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert "Cannot connect to API server" in captured.err
+
+    @patch("askfind.cli.parse_llm_response", side_effect=json.JSONDecodeError("bad", "doc", 0))
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_json_decode_error_returns_3(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, capsys
+    ):
+        mock_config_cls.return_value = _make_mock_config()
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert "Invalid response from LLM API" in captured.err
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_unexpected_error_returns_3(self, mock_config_cls, mock_get_key, mock_llm_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        _setup_mock_llm_client(mock_llm_cls, extract_side_effect=RuntimeError("boom"))
+
+        result = main(["query"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert "Error: RuntimeError: boom" in captured.err
