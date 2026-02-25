@@ -1,6 +1,8 @@
 """Tests for filesystem walker."""
 
 from pathlib import Path
+
+import pytest
 import askfind.search.walker as walker
 
 from askfind.search.filters import SearchFilters
@@ -21,6 +23,52 @@ def _make_tree(tmp_path: Path) -> None:
     (tmp_path / ".git" / "config").write_text("gitconfig")
     (tmp_path / "node_modules").mkdir()
     (tmp_path / "node_modules" / "pkg.js").write_text("module")
+
+
+class _EntryWithFailingStat:
+    """DirEntry proxy that can raise OSError on stat()."""
+
+    def __init__(self, entry, *, fail_stat: bool) -> None:
+        self._entry = entry
+        self.name = entry.name
+        self.path = entry.path
+        self._fail_stat = fail_stat
+
+    def is_dir(self, follow_symlinks: bool = True) -> bool:
+        return self._entry.is_dir(follow_symlinks=follow_symlinks)
+
+    def is_file(self, follow_symlinks: bool = True) -> bool:
+        return self._entry.is_file(follow_symlinks=follow_symlinks)
+
+    def is_symlink(self) -> bool:
+        return self._entry.is_symlink()
+
+    def stat(self, follow_symlinks: bool = True):
+        if self._fail_stat:
+            raise OSError("simulated stat failure")
+        return self._entry.stat(follow_symlinks=follow_symlinks)
+
+
+class _ScandirWithStatFault:
+    """scandir context manager proxy that swaps one entry with a faulty proxy."""
+
+    def __init__(self, entries, *, failing_name: str) -> None:
+        self._entries = entries
+        self._failing_name = failing_name
+
+    def __enter__(self):
+        self._entries.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return self._entries.__exit__(exc_type, exc, tb)
+
+    def __iter__(self):
+        for entry in self._entries:
+            if entry.name == self._failing_name:
+                yield _EntryWithFailingStat(entry, fail_stat=True)
+            else:
+                yield entry
 
 
 class TestWalkAndFilter:
@@ -121,3 +169,104 @@ class TestWalkAndFilter:
         assert "src" in names
         assert "readme.md" in names
         assert "login.py" not in names
+
+    def test_has_filter_does_not_follow_symlink_targets_outside_root(self, tmp_path):
+        outside_root = tmp_path.parent / f"{tmp_path.name}_outside"
+        outside_root.mkdir()
+        outside_file = outside_root / "outside.txt"
+        outside_file.write_text("SECRET_TOKEN")
+        outside_dir = outside_root / "outside_dir"
+        outside_dir.mkdir()
+        outside_nested_file = outside_dir / "nested.txt"
+        outside_nested_file.write_text("SECRET_TOKEN")
+
+        inside_file = tmp_path / "inside.txt"
+        inside_file.write_text("SECRET_TOKEN")
+
+        file_symlink = tmp_path / "outside_file_link"
+        dir_symlink = tmp_path / "outside_dir_link"
+        try:
+            file_symlink.symlink_to(outside_file)
+            dir_symlink.symlink_to(outside_dir, target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        filters = SearchFilters(has=["SECRET_TOKEN"])
+        results = list(walk_and_filter(tmp_path, filters))
+
+        assert inside_file in results
+        assert file_symlink not in results
+        assert dir_symlink not in results
+        assert outside_file not in results
+        assert outside_nested_file not in results
+        assert all(tmp_path in path.parents for path in results)
+
+    def test_permission_error_on_root_scandir_returns_empty_results(self, tmp_path, monkeypatch):
+        def denied_scandir(_path):
+            raise PermissionError("denied")
+
+        monkeypatch.setattr(walker.os, "scandir", denied_scandir)
+
+        results = list(walk_and_filter(tmp_path, SearchFilters()))
+        assert results == []
+
+    def test_entry_stat_oserror_branch_continues_traversal(self, tmp_path, monkeypatch):
+        (tmp_path / "good_dir").mkdir()
+        expected = tmp_path / "good_dir" / "expected.txt"
+        expected.write_text("ok")
+        broken = tmp_path / "broken.txt"
+        broken.write_text("broken")
+
+        orig_scandir = walker.os.scandir
+
+        def scandir_with_fault(path):
+            if Path(path) == tmp_path:
+                return _ScandirWithStatFault(orig_scandir(path), failing_name=broken.name)
+            return orig_scandir(path)
+
+        monkeypatch.setattr(walker.os, "scandir", scandir_with_fault)
+
+        results = list(walk_and_filter(tmp_path, SearchFilters()))
+        assert expected in results
+        assert broken not in results
+
+    def test_matches_stat_false_still_recurses_into_child_directories(
+        self, tmp_path, monkeypatch
+    ):
+        _make_tree(tmp_path)
+        filters = SearchFilters()
+
+        monkeypatch.setattr(filters, "matches_stat", lambda _stat: False)
+
+        orig_scandir = walker.os.scandir
+        scanned = []
+
+        def scandir_guard(path):
+            scanned.append(Path(path).resolve().as_posix())
+            return orig_scandir(path)
+
+        monkeypatch.setattr(walker.os, "scandir", scandir_guard)
+
+        results = list(walk_and_filter(tmp_path, filters))
+        assert results == []
+        assert (tmp_path / "src").resolve().as_posix() in scanned
+        assert (tmp_path / "src" / "auth").resolve().as_posix() in scanned
+
+    def test_depth_mismatch_still_recurses_and_finds_deeper_matches(self, tmp_path, monkeypatch):
+        _make_tree(tmp_path)
+        filters = SearchFilters(depth=">0", name="login.py")
+
+        orig_scandir = walker.os.scandir
+        scanned = []
+
+        def scandir_guard(path):
+            scanned.append(Path(path).resolve().as_posix())
+            return orig_scandir(path)
+
+        monkeypatch.setattr(walker.os, "scandir", scandir_guard)
+
+        results = list(walk_and_filter(tmp_path, filters))
+        assert tmp_path / "src" / "auth" / "login.py" in results
+        assert tmp_path / "readme.md" not in results
+        assert (tmp_path / "src").resolve().as_posix() in scanned
+        assert (tmp_path / "src" / "auth").resolve().as_posix() in scanned

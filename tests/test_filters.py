@@ -1,9 +1,16 @@
 """Tests for search filter dataclass and matching logic."""
 
 
+from datetime import datetime, timezone
+from types import SimpleNamespace
 from unittest.mock import patch
 
-from askfind.search.filters import SearchFilters, parse_size, parse_time_delta
+from askfind.search.filters import (
+    MAX_CONTENT_SCAN_BYTES,
+    SearchFilters,
+    parse_size,
+    parse_time_delta,
+)
 
 
 class TestParseSize:
@@ -148,3 +155,95 @@ class TestSearchFilters:
         assert filters.matches_depth(2) is True
         assert filters.matches_depth(3) is False
         assert filters.matches_depth(5) is False
+
+    def test_depth_filter_equal_default_operator(self):
+        filters = SearchFilters(depth="3")
+        assert filters.matches_depth(3) is True
+        assert filters.matches_depth(2) is False
+
+    def test_depth_filter_greater_than_operator(self):
+        filters = SearchFilters(depth=">3")
+        assert filters.matches_depth(4) is True
+        assert filters.matches_depth(3) is False
+
+    def test_invalid_regex_is_cleared(self):
+        filters = SearchFilters(regex="[")
+        assert filters.regex is None
+        assert filters._compiled_regex is None
+        assert filters.matches_name("anything.txt") is True
+
+    def test_fuzzy_match_true_and_false_paths(self):
+        filters = SearchFilters(fuzzy="abc")
+        assert filters.matches_name("a___b___c.txt") is True
+        assert filters.matches_name("acb.txt") is False
+
+    def test_type_link_and_unknown_type_fallback(self):
+        filters = SearchFilters(type="link")
+        assert filters.matches_type(is_file=False, is_dir=False, is_link=True) is True
+        assert filters.matches_type(is_file=True, is_dir=False, is_link=False) is False
+
+        unknown = SearchFilters(type="unknown")
+        assert unknown.matches_type(is_file=False, is_dir=False, is_link=False) is True
+
+    def test_size_filter_less_than_branch(self):
+        stat = SimpleNamespace(st_size=2048)
+        assert SearchFilters(size="<3KB").matches_stat(stat) is True
+        assert SearchFilters(size="<1KB").matches_stat(stat) is False
+
+    def test_mod_filter_greater_and_less_than_old_new_behavior(self):
+        fixed_now = datetime(2024, 1, 10, tzinfo=timezone.utc)
+        older_stat = SimpleNamespace(
+            st_mtime=datetime(2024, 1, 7, tzinfo=timezone.utc).timestamp()
+        )
+        newer_stat = SimpleNamespace(
+            st_mtime=datetime(2024, 1, 9, 12, tzinfo=timezone.utc).timestamp()
+        )
+
+        with patch("askfind.search.filters.datetime") as mock_datetime:
+            mock_datetime.now.return_value = fixed_now
+            mock_datetime.fromtimestamp.side_effect = (
+                lambda ts, tz: datetime.fromtimestamp(ts, tz=tz)
+            )
+
+            recent = SearchFilters(mod=">1d")
+            assert recent.matches_stat(newer_stat) is True
+            assert recent.matches_stat(older_stat) is False
+
+            old = SearchFilters(mod="<1d")
+            assert old.matches_stat(older_stat) is True
+            assert old.matches_stat(newer_stat) is False
+
+    def test_perm_filter_r_w_x_pass_and_fail_paths(self):
+        full_access = SimpleNamespace(st_mode=0o777)
+        assert SearchFilters(perm="r").matches_stat(full_access) is True
+        assert SearchFilters(perm="w").matches_stat(full_access) is True
+        assert SearchFilters(perm="x").matches_stat(full_access) is True
+
+        assert SearchFilters(perm="r").matches_stat(SimpleNamespace(st_mode=0o333)) is False
+        assert SearchFilters(perm="w").matches_stat(SimpleNamespace(st_mode=0o555)) is False
+        assert SearchFilters(perm="x").matches_stat(SimpleNamespace(st_mode=0o666)) is False
+
+    def test_matches_content_without_has_returns_true(self, tmp_path):
+        filters = SearchFilters(has=None)
+        assert filters.matches_content(tmp_path / "missing.txt") is True
+
+    def test_matches_content_returns_false_for_symlink(self, tmp_path):
+        target = tmp_path / "target.txt"
+        target.write_text("TODO")
+        link = tmp_path / "target-link.txt"
+        link.symlink_to(target)
+        assert SearchFilters(has=["TODO"]).matches_content(link) is False
+
+    def test_matches_content_returns_false_for_oversized_file(self, tmp_path):
+        f = tmp_path / "large.txt"
+        f.write_bytes(b"a" * (MAX_CONTENT_SCAN_BYTES + 1))
+        assert SearchFilters(has=["a"]).matches_content(f) is False
+
+    def test_matches_content_returns_false_on_os_error(self, tmp_path):
+        f = tmp_path / "code.py"
+        f.write_text("TODO")
+        filters = SearchFilters(has=["TODO"])
+        with patch(
+            "askfind.search.filters._file_contains_all_terms", side_effect=OSError
+        ):
+            assert filters.matches_content(f) is False
