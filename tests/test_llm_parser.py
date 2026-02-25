@@ -1,5 +1,7 @@
 """Tests for LLM response parsing."""
 
+import json
+
 from askfind.llm.parser import parse_llm_response
 from askfind.search.filters import SearchFilters
 
@@ -66,3 +68,35 @@ class TestParseLlmResponse:
         assert filters.ext == [".py", ".js"]
         assert filters.type == "f"
         assert filters.depth == "<3"
+
+    def test_rejects_absolute_path_values(self):
+        raw = '{"path": "/etc", "not_path": "/var/log"}'
+        filters = parse_llm_response(raw)
+        assert filters.path is None
+        assert filters.not_path is None
+
+    def test_rejects_parent_traversal_path_values(self):
+        raw = '{"path": "../secrets", "not_path": "src/../private"}'
+        filters = parse_llm_response(raw)
+        assert filters.path is None
+        assert filters.not_path is None
+
+    def test_truncates_list_fields_to_max_length(self):
+        ext_list = [f".ext{i}" for i in range(30)]
+        raw = json.dumps({"ext": ext_list})
+        filters = parse_llm_response(raw)
+        assert filters.ext is not None
+        assert len(filters.ext) == 20
+
+    def test_truncates_long_string_terms(self):
+        long_term = "x" * 500
+        raw = json.dumps({"has": [long_term], "name": long_term})
+        filters = parse_llm_response(raw)
+        assert filters.has == ["x" * 200]
+        assert filters.name == "x" * 200
+
+    def test_extracts_balanced_json_with_nested_braces(self):
+        raw = 'prefix {"name": "literal { brace }", "ext": [".py"]} suffix'
+        filters = parse_llm_response(raw)
+        assert filters.name == "literal { brace }"
+        assert filters.ext == [".py"]

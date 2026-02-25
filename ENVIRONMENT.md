@@ -31,6 +31,11 @@ python -m askfind --help
 PYTHONPATH=src pytest -q
 ```
 
+## Hooks Integration
+
+- Shared git hooks in `.githooks/` run tests in `askfind_env` by default.
+- If `askfind_env` is missing, hooks fall back to `pytest_env` when available.
+
 ## Reproducibility Notes
 
 - Runtime package versions are pinned in `requirements.txt` and installed by `environment.yml`.

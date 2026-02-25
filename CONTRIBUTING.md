@@ -48,9 +48,8 @@ Feature suggestions are welcome! Please:
 
 4. Set up development environment:
    ```bash
-   conda create -n askfind python=3.12
-   conda activate askfind
-   pip install -e ".[dev]"
+   conda env create -f environment.yml
+   conda activate askfind_env
    git config core.hooksPath .githooks
    ```
 

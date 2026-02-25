@@ -185,11 +185,8 @@ git clone https://github.com/yourusername/askfind.git
 cd askfind
 
 # Create conda environment
-conda create -n askfind python=3.12
-conda activate askfind
-
-# Install in development mode
-pip install -e ".[dev]"
+conda env create -f environment.yml
+conda activate askfind_env
 
 # Run tests
 pytest tests/ -v
@@ -243,11 +240,13 @@ This repository includes shared git hooks under `.githooks/`.
 git config core.hooksPath .githooks
 ```
 
-After setup, both `pre-commit` and `pre-push` run:
+After setup, both `pre-commit` and `pre-push` run tests using:
 
 ```bash
-PYTHONPATH=src ./pytest_env/bin/pytest -q
+conda run -n askfind_env sh -lc 'PYTHONPATH=src pytest -q'
 ```
+
+If `askfind_env` is not available, hooks fall back to `./pytest_env/bin/pytest`.
 
 ### Contributing
 
