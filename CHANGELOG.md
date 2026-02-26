@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.3] - 2026-02-26
+
+### Added
+- Added safe symlink traversal option:
+  - `--follow-symlinks` CLI switch.
+  - `follow_symlinks` config option under `[search]`.
+  - Root-bounded traversal and cycle protection for followed symlink directories.
+- Added binary file exclusion controls:
+  - Binary detection/exclusion enabled by default.
+  - `--include-binary` CLI switch.
+  - `exclude_binary_files` config option under `[search]`.
+- Added release workflow `.github/workflows/release.yml` for `v*` tags:
+  - build (`python -m build`)
+  - artifact validation (`twine check`)
+  - upload of `dist/*` artifacts
+- Added traversal benchmark baseline script: `scripts/bench/benchmark_walk.py`.
+
+### Changed
+- Updated README/CONTRIBUTING/FUTURE docs to align with current repository links and quality gates.
+- Updated package version metadata to `0.1.3`.
+
 ## [0.1.2] - 2026-02-25
 
 ### Added

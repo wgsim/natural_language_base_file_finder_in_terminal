@@ -15,6 +15,8 @@ def _make_mock_config(default_root="."):
     mock_config.default_root = str(default_root)
     mock_config.max_results = 50
     mock_config.respect_ignore_files = True
+    mock_config.follow_symlinks = False
+    mock_config.exclude_binary_files = True
     mock_config.editor = "vim"
     return mock_config
 
@@ -76,6 +78,16 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["test", "--no-ignore"])
         assert args.no_ignore is True
+
+    def test_follow_symlinks_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--follow-symlinks"])
+        assert args.follow_symlinks is True
+
+    def test_include_binary_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--include-binary"])
+        assert args.include_binary is True
 
 
 class TestValidateBaseUrl:
@@ -262,6 +274,24 @@ class TestConfigSubcommand:
         mock_config_cls.return_value = MagicMock()
         result = main(["config", "set", "respect_ignore_files", "maybe"])
         assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_follow_symlinks_success(self, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "set", "follow_symlinks", "true"])
+        assert result == 0
+        assert mock_config.follow_symlinks is True
+        mock_config.save.assert_called_once()
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_exclude_binary_files_success(self, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "set", "exclude_binary_files", "false"])
+        assert result == 0
+        assert mock_config.exclude_binary_files is False
+        mock_config.save.assert_called_once()
 
     @patch("askfind.cli.Config.from_file")
     @patch("askfind.cli.get_api_key", return_value=None)
@@ -501,6 +531,42 @@ class TestMainAdditionalBranches:
 
         assert result == 1
         assert mock_walk.call_args.kwargs["respect_ignore_files"] is False
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_follow_symlinks_flag_overrides_config(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.follow_symlinks = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--follow-symlinks", "--root", str(tmp_path)])
+
+        assert result == 1
+        assert mock_walk.call_args.kwargs["follow_symlinks"] is True
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_include_binary_flag_disables_binary_exclusion(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.exclude_binary_files = True
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--include-binary", "--root", str(tmp_path)])
+
+        assert result == 1
+        assert mock_walk.call_args.kwargs["exclude_binary_files"] is False
 
     @patch("askfind.search.reranker.rerank_results")
     @patch("askfind.cli.walk_and_filter")

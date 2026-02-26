@@ -339,3 +339,112 @@ class TestWalkAndFilter:
 
         assert "readme.md" not in paths
         assert "src/readme.md" in paths
+
+    def test_excludes_binary_files_by_default(self, tmp_path):
+        text_file = tmp_path / "notes.txt"
+        text_file.write_text("hello")
+        binary_file = tmp_path / "blob.bin"
+        binary_file.write_bytes(b"\x00\x01\x02\x03")
+
+        results = list(walk_and_filter(tmp_path, SearchFilters(type="file")))
+
+        assert text_file in results
+        assert binary_file not in results
+
+    def test_can_include_binary_files(self, tmp_path):
+        binary_file = tmp_path / "blob.bin"
+        binary_file.write_bytes(b"\x00\x01\x02\x03")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file"),
+                exclude_binary_files=False,
+            )
+        )
+
+        assert binary_file in results
+
+    def test_follow_symlinks_includes_internal_symlink_target_file(self, tmp_path):
+        target = tmp_path / "target.txt"
+        target.write_text("hello")
+        symlink = tmp_path / "target-link.txt"
+        try:
+            symlink.symlink_to(target)
+        except (NotImplementedError, OSError):
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", ext=[".txt"]),
+                follow_symlinks=True,
+            )
+        )
+
+        assert target in results
+        assert symlink in results
+
+    def test_follow_symlinks_does_not_escape_search_root(self, tmp_path):
+        outside_root = tmp_path.parent / f"{tmp_path.name}_outside_follow"
+        outside_root.mkdir()
+        outside_file = outside_root / "secret.txt"
+        outside_file.write_text("secret")
+        symlink = tmp_path / "secret-link.txt"
+        try:
+            symlink.symlink_to(outside_file)
+        except (NotImplementedError, OSError):
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", ext=[".txt"]),
+                follow_symlinks=True,
+            )
+        )
+
+        assert symlink not in results
+        assert outside_file not in results
+
+    def test_follow_symlinks_avoids_directory_cycles(self, tmp_path):
+        loop_dir = tmp_path / "loop"
+        loop_dir.mkdir()
+        target = loop_dir / "target.txt"
+        target.write_text("ok")
+        loop_link = loop_dir / "again"
+        try:
+            loop_link.symlink_to(loop_dir, target_is_directory=True)
+        except (NotImplementedError, OSError):
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", name="target.txt"),
+                max_results=10,
+                follow_symlinks=True,
+            )
+        )
+
+        assert results.count(target) == 1
+
+    def test_follow_symlinks_allows_content_matching_on_internal_links(self, tmp_path):
+        target = tmp_path / "token.txt"
+        target.write_text("SECRET_TOKEN")
+        symlink = tmp_path / "token-link.txt"
+        try:
+            symlink.symlink_to(target)
+        except (NotImplementedError, OSError):
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(has=["SECRET_TOKEN"]),
+                follow_symlinks=True,
+            )
+        )
+
+        assert target in results
+        assert symlink in results
