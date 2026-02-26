@@ -108,7 +108,7 @@ askfind config show
 # Set configuration values
 askfind config set model "gpt-4o"
 askfind config set max_results 100
-askfind config set parallel_workers 4
+askfind config set parallel_workers 1
 askfind config set respect_ignore_files false
 askfind config set follow_symlinks true
 askfind config set exclude_binary_files false
@@ -189,7 +189,7 @@ model = "openai/gpt-4o-mini"
 [search]
 default_root = "."
 max_results = 50
-parallel_workers = 4
+parallel_workers = 1
 respect_ignore_files = true
 follow_symlinks = false
 exclude_binary_files = true

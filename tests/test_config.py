@@ -20,7 +20,7 @@ class TestConfig:
         assert config.model == "openai/gpt-4o-mini"
         assert config.default_root == "."
         assert config.max_results == 50
-        assert config.parallel_workers == 4
+        assert config.parallel_workers == 1
         assert config.respect_ignore_files is True
         assert config.follow_symlinks is False
         assert config.exclude_binary_files is True
@@ -88,7 +88,7 @@ class TestConfig:
         config_file.write_bytes(toml_content)
 
         config = Config.from_file(config_file)
-        assert config.parallel_workers == 4
+        assert config.parallel_workers == 1
 
 
 class TestGetApiKey:

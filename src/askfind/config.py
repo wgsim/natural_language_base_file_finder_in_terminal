@@ -26,7 +26,7 @@ class Config:
     model: str = "openai/gpt-4o-mini"
     default_root: str = "."
     max_results: int = 50
-    parallel_workers: int = 4
+    parallel_workers: int = 1
     respect_ignore_files: bool = True
     follow_symlinks: bool = False
     exclude_binary_files: bool = True

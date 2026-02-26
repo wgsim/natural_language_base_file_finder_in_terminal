@@ -6,7 +6,7 @@ All notable changes to this project are documented in this file.
 
 ### Added
 - Added parallel traversal controls:
-  - `parallel_workers` config option under `[search]` (default: `4`)
+  - `parallel_workers` config option under `[search]` (default: `1`)
   - `--workers` CLI option (`0` uses configured value)
 - Added worker selection to traversal benchmark script (`scripts/bench/benchmark_walk.py`).
 
