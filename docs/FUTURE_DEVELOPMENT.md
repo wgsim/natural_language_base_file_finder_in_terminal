@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.5** (Current) - Search cache and repeated-query acceleration
+- **v0.1.6** (Current) - Cache observability and interactive cache parity
+- **v0.1.5** - Search cache and repeated-query acceleration
 - **v0.1.4** - Parallel traversal workers and performance baseline updates
 - **v0.1.3** - Symlink traversal, binary exclusion, and release workflow
 - **v0.1.2** - Ignore-aware traversal UX and release prep
@@ -184,7 +185,7 @@
 
 ## Known Limitations
 
-### Current v0.1.2 Limitations
+### Current v0.1.6 Limitations
 
 1. **LLM Dependency**: Requires internet connection and API key
    - *Future*: Offline mode with rule-based fallback

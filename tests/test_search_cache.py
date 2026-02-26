@@ -82,3 +82,17 @@ def test_compute_root_fingerprint_changes_after_top_level_mutation(tmp_path):
     after = compute_root_fingerprint(tmp_path)
 
     assert before != after
+
+
+def test_cache_stats_track_hits_misses_and_sets(tmp_path):
+    cache = SearchCache(cache_path=tmp_path / "cache.json", ttl_seconds=60, max_entries=16)
+    file_a = tmp_path / "a.py"
+    file_a.write_text("print('a')\n")
+
+    assert cache.stats() == {"hits": 0, "misses": 0, "sets": 0}
+
+    cache.get(key="missing", root_fingerprint="fp")
+    cache.set(key="k1", root_fingerprint="fp", paths=[file_a])
+    cache.get(key="k1", root_fingerprint="fp")
+
+    assert cache.stats() == {"hits": 1, "misses": 1, "sets": 1}

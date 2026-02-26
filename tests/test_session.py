@@ -11,14 +11,20 @@ from rich.table import Table
 def _make_session_for_actions(result: FileResult) -> InteractiveSession:
     session = InteractiveSession.__new__(InteractiveSession)
     session.config = SimpleNamespace(
+        base_url="https://api.example.com",
+        model="test-model",
         editor="vim",
         max_results=50,
+        cache_enabled=True,
+        cache_ttl_seconds=300,
+        respect_ignore_files=True,
         follow_symlinks=False,
         exclude_binary_files=True,
         parallel_workers=4,
     )
     session.root = result.path.parent
     session.results = [result]
+    session.cache = None
     session.client = MagicMock()
     return session
 
@@ -26,14 +32,20 @@ def _make_session_for_actions(result: FileResult) -> InteractiveSession:
 def _make_session_for_run(tmp_path) -> InteractiveSession:
     session = InteractiveSession.__new__(InteractiveSession)
     session.config = SimpleNamespace(
+        base_url="https://api.example.com",
+        model="test-model",
         editor="vim",
         max_results=50,
+        cache_enabled=True,
+        cache_ttl_seconds=300,
+        respect_ignore_files=True,
         follow_symlinks=False,
         exclude_binary_files=True,
         parallel_workers=4,
     )
     session.root = tmp_path.resolve()
     session.results = []
+    session.cache = None
     session.client = MagicMock()
     return session
 
@@ -213,14 +225,20 @@ class TestInteractiveSessionSearch:
 
         session = InteractiveSession.__new__(InteractiveSession)
         session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
             editor="vim",
             max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
             follow_symlinks=False,
             exclude_binary_files=True,
             parallel_workers=4,
         )
         session.root = tmp_path.resolve()
         session.results = []
+        session.cache = None
         session.client = MagicMock()
         session.client.extract_filters.return_value = '{"ext": [".py"]}'
 
@@ -236,14 +254,20 @@ class TestInteractiveSessionSearch:
     def test_search_handles_exceptions_without_raising(self, mock_print, tmp_path):
         session = InteractiveSession.__new__(InteractiveSession)
         session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
             editor="vim",
             max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
             follow_symlinks=False,
             exclude_binary_files=True,
             parallel_workers=4,
         )
         session.root = tmp_path.resolve()
         session.results = []
+        session.cache = None
         session.client = MagicMock()
         session.client.extract_filters.side_effect = RuntimeError("boom")
 
@@ -258,14 +282,20 @@ class TestInteractiveSessionSearch:
     def test_search_prints_no_results_message(self, mock_print, mock_parse, _mock_walk, tmp_path):
         session = InteractiveSession.__new__(InteractiveSession)
         session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
             editor="vim",
             max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
             follow_symlinks=False,
             exclude_binary_files=True,
             parallel_workers=4,
         )
         session.root = tmp_path.resolve()
         session.results = []
+        session.cache = None
         session.client = MagicMock()
         session.client.extract_filters.return_value = '{"ext": [".py"]}'
 
@@ -285,14 +315,20 @@ class TestInteractiveSessionSearch:
 
         session = InteractiveSession.__new__(InteractiveSession)
         session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
             editor="vim",
             max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
             follow_symlinks=False,
             exclude_binary_files=True,
             parallel_workers=4,
         )
         session.root = tmp_path.resolve()
         session.results = []
+        session.cache = None
         session.client = MagicMock()
         session.client.extract_filters.return_value = '{"ext": [".py"]}'
 
@@ -312,14 +348,20 @@ class TestInteractiveSessionSearch:
     def test_search_passes_follow_symlinks_and_binary_options(self, mock_parse, mock_walk, tmp_path):
         session = InteractiveSession.__new__(InteractiveSession)
         session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
             editor="vim",
             max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=False,
             follow_symlinks=True,
             exclude_binary_files=False,
             parallel_workers=8,
         )
         session.root = tmp_path.resolve()
         session.results = []
+        session.cache = None
         session.client = MagicMock()
         session.client.extract_filters.return_value = '{"ext": [".py"]}'
 
@@ -327,6 +369,87 @@ class TestInteractiveSessionSearch:
 
         session._search("python files")
 
+        assert mock_walk.call_args.kwargs["respect_ignore_files"] is False
         assert mock_walk.call_args.kwargs["follow_symlinks"] is True
         assert mock_walk.call_args.kwargs["exclude_binary_files"] is False
         assert mock_walk.call_args.kwargs["traversal_workers"] == 8
+
+    @patch("askfind.interactive.session.compute_root_fingerprint", return_value="root-fp")
+    @patch("askfind.interactive.session.build_search_cache_key", return_value="cache-key")
+    @patch("askfind.interactive.session.walk_and_filter")
+    @patch("askfind.interactive.session.parse_llm_response")
+    def test_search_cache_hit_skips_llm_and_walk(
+        self, mock_parse, mock_walk, mock_key, mock_root_fingerprint, tmp_path
+    ):
+        file_path = tmp_path / "cached.py"
+        file_path.write_text("print('cached')\n")
+
+        session = InteractiveSession.__new__(InteractiveSession)
+        session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
+            editor="vim",
+            max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+            parallel_workers=4,
+        )
+        session.root = tmp_path.resolve()
+        session.results = []
+        session.client = MagicMock()
+        session.cache = MagicMock()
+        session.cache.get.return_value = [file_path]
+
+        session._search("python files")
+
+        assert len(session.results) == 1
+        assert session.results[0].path == file_path
+        session.client.extract_filters.assert_not_called()
+        mock_parse.assert_not_called()
+        mock_walk.assert_not_called()
+        session.cache.get.assert_called_once_with(key="cache-key", root_fingerprint="root-fp")
+
+    @patch("askfind.interactive.session.compute_root_fingerprint", return_value="root-fp")
+    @patch("askfind.interactive.session.build_search_cache_key", return_value="cache-key")
+    @patch("askfind.interactive.session.walk_and_filter")
+    @patch("askfind.interactive.session.parse_llm_response")
+    def test_search_cache_miss_writes_cache(
+        self, mock_parse, mock_walk, mock_key, mock_root_fingerprint, tmp_path
+    ):
+        file_path = tmp_path / "live.py"
+        file_path.write_text("print('live')\n")
+
+        session = InteractiveSession.__new__(InteractiveSession)
+        session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
+            editor="vim",
+            max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+            parallel_workers=4,
+        )
+        session.root = tmp_path.resolve()
+        session.results = []
+        session.client = MagicMock()
+        session.client.extract_filters.return_value = '{"ext": [".py"]}'
+        session.cache = MagicMock()
+        session.cache.get.return_value = None
+        mock_parse.return_value = MagicMock()
+        mock_walk.return_value = [file_path]
+
+        session._search("python files")
+
+        session.client.extract_filters.assert_called_once_with("python files")
+        session.cache.get.assert_called_once_with(key="cache-key", root_fingerprint="root-fp")
+        session.cache.set.assert_called_once_with(
+            key="cache-key",
+            root_fingerprint="root-fp",
+            paths=[file_path],
+        )

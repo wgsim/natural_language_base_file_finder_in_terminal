@@ -41,6 +41,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-rerank", action="store_true", help="Skip semantic re-ranking")
     parser.add_argument("--no-cache", action="store_true", help="Disable search cache for this command")
     parser.add_argument(
+        "--cache-stats",
+        action="store_true",
+        help="Print cache hit/miss/set counters to stderr",
+    )
+    parser.add_argument(
         "--no-ignore",
         action="store_true",
         help="Ignore .gitignore/.askfindignore rules during traversal",
@@ -139,6 +144,17 @@ def _read_positive_int_config(value: object, *, default: int) -> int:
     if isinstance(value, int) and value >= 1:
         return value
     return default
+
+
+def _emit_cache_stats(cache: SearchCache | None) -> None:
+    if cache is None:
+        print("cache: disabled", file=sys.stderr)
+        return
+    stats = cache.stats()
+    hits = stats.get("hits", 0)
+    misses = stats.get("misses", 0)
+    sets = stats.get("sets", 0)
+    print(f"cache: hits={hits} misses={misses} sets={sets}", file=sys.stderr)
 
 
 def _handle_config(args: argparse.Namespace) -> int:
@@ -436,6 +452,8 @@ def main(argv: list[str] | None = None) -> int:
                     logger.debug("Cache write failed; continuing without cache", exc_info=True)
 
         if not results:
+            if args.cache_stats:
+                _emit_cache_stats(cache)
             return 1
 
         if args.json_output:
@@ -444,6 +462,8 @@ def main(argv: list[str] | None = None) -> int:
             print(format_verbose(results))
         else:
             print(format_plain(results))
+        if args.cache_stats:
+            _emit_cache_stats(cache)
         return 0
     except KeyboardInterrupt:
         print("\nSearch cancelled.", file=sys.stderr)
