@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.5] - 2026-02-26
+
+### Added
+- Added search cache controls:
+  - `cache_enabled` config option under `[search]` (default: `true`)
+  - `cache_ttl_seconds` config option under `[search]` (default: `300`)
+  - `--no-cache` CLI switch to bypass cache for a single command
+- Added file-based search cache implementation with:
+  - keying by query/root/search options/model/base_url
+  - TTL-based expiry
+  - root fingerprint checks for coarse invalidation
+- Added cache unit tests (`tests/test_search_cache.py`).
+
+### Changed
+- Single-command search now checks cache before LLM extraction/walker traversal.
+- Updated package version metadata to `0.1.5`.
+
 ## [0.1.4] - 2026-02-26
 
 ### Added

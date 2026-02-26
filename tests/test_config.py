@@ -21,6 +21,8 @@ class TestConfig:
         assert config.default_root == "."
         assert config.max_results == 50
         assert config.parallel_workers == 1
+        assert config.cache_enabled is True
+        assert config.cache_ttl_seconds == 300
         assert config.respect_ignore_files is True
         assert config.follow_symlinks is False
         assert config.exclude_binary_files is True
@@ -51,6 +53,8 @@ class TestConfig:
             model="custom-model",
             respect_ignore_files=False,
             parallel_workers=8,
+            cache_enabled=False,
+            cache_ttl_seconds=120,
             follow_symlinks=True,
             exclude_binary_files=False,
             editor="nano",
@@ -61,6 +65,8 @@ class TestConfig:
         assert reloaded.model == "custom-model"
         assert reloaded.respect_ignore_files is False
         assert reloaded.parallel_workers == 8
+        assert reloaded.cache_enabled is False
+        assert reloaded.cache_ttl_seconds == 120
         assert reloaded.follow_symlinks is True
         assert reloaded.exclude_binary_files is False
         assert reloaded.editor == "nano"
@@ -89,6 +95,15 @@ class TestConfig:
 
         config = Config.from_file(config_file)
         assert config.parallel_workers == 1
+
+    def test_invalid_cache_settings_fall_back_to_defaults(self, tmp_path):
+        toml_content = b'[search]\ncache_enabled = "yes"\ncache_ttl_seconds = 0\n'
+        config_file = tmp_path / "config.toml"
+        config_file.write_bytes(toml_content)
+
+        config = Config.from_file(config_file)
+        assert config.cache_enabled is True
+        assert config.cache_ttl_seconds == 300
 
 
 class TestGetApiKey:

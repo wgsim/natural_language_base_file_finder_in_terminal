@@ -12,6 +12,7 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 🙈 **Ignore-Aware Traversal** - Respects `.gitignore` and `.askfindignore` by default
 - 🔗 **Safe Symlink Traversal** - Optional `--follow-symlinks` follows links only inside search root
 - 🧪 **Binary File Exclusion** - Binary files are excluded by default (override with `--include-binary`)
+- 💾 **Search Cache** - Reuses recent query results (disable per run with `--no-cache`)
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
 - 🔐 **Secure Secrets** - Keychain-first API key storage (macOS Keychain, Linux Secret Service, Windows Credential Manager)
 - 📋 **Multiple Output Formats** - Plain, verbose, or JSON output for scripting
@@ -67,6 +68,9 @@ askfind "python files" --workers 8  # Parallel traversal workers
 # Disable re-ranking for faster results
 askfind "python files" --no-rerank
 
+# Disable cache for one command
+askfind "python files" --no-cache
+
 # Search everything (ignore files disabled)
 askfind "python files" --no-ignore
 
@@ -109,6 +113,8 @@ askfind config show
 askfind config set model "gpt-4o"
 askfind config set max_results 100
 askfind config set parallel_workers 1
+askfind config set cache_enabled true
+askfind config set cache_ttl_seconds 300
 askfind config set respect_ignore_files false
 askfind config set follow_symlinks true
 askfind config set exclude_binary_files false
@@ -130,6 +136,7 @@ askfind config models
    By default, traversal respects root `.gitignore` and `.askfindignore`. Use `--no-ignore` to disable this behavior.
    Binary files are excluded by default to reduce noisy results. Use `--include-binary` when needed.
    Symlinks are not followed unless `--follow-symlinks` is set.
+   Search results are cached by default. Use `--no-cache` to bypass cache for one command.
 
 3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance
 
@@ -190,6 +197,8 @@ model = "openai/gpt-4o-mini"
 default_root = "."
 max_results = 50
 parallel_workers = 1
+cache_enabled = true
+cache_ttl_seconds = 300
 respect_ignore_files = true
 follow_symlinks = false
 exclude_binary_files = true

@@ -15,6 +15,8 @@ def _make_mock_config(default_root="."):
     mock_config.default_root = str(default_root)
     mock_config.max_results = 50
     mock_config.parallel_workers = 4
+    mock_config.cache_enabled = True
+    mock_config.cache_ttl_seconds = 300
     mock_config.respect_ignore_files = True
     mock_config.follow_symlinks = False
     mock_config.exclude_binary_files = True
@@ -84,6 +86,11 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["test", "--no-rerank"])
         assert args.no_rerank is True
+
+    def test_no_cache_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--no-cache"])
+        assert args.no_cache is True
 
     def test_no_ignore_flag(self):
         parser = build_parser()
@@ -294,6 +301,30 @@ class TestConfigSubcommand:
         mock_config_cls.return_value = MagicMock()
         result = main(["config", "set", "parallel_workers", "0"])
         assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_cache_ttl_seconds_success(self, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "set", "cache_ttl_seconds", "120"])
+        assert result == 0
+        assert mock_config.cache_ttl_seconds == 120
+        mock_config.save.assert_called_once()
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_cache_ttl_seconds_must_be_positive(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "cache_ttl_seconds", "0"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_cache_enabled_success(self, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "set", "cache_enabled", "false"])
+        assert result == 0
+        assert mock_config.cache_enabled is False
+        mock_config.save.assert_called_once()
 
     @patch("askfind.cli.Config.from_file")
     def test_config_set_respect_ignore_files_success(self, mock_config_cls):
@@ -602,6 +633,110 @@ class TestMainAdditionalBranches:
 
         assert result == 1
         assert mock_walk.call_args.kwargs["exclude_binary_files"] is False
+
+    @patch("askfind.cli.SearchCache")
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_no_cache_flag_skips_cache_layer(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_cache_cls,
+        tmp_path,
+    ):
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--no-cache", "--root", str(tmp_path)])
+
+        assert result == 1
+        mock_cache_cls.assert_not_called()
+
+    @patch("askfind.cli.compute_root_fingerprint", return_value="root-fp")
+    @patch("askfind.cli.build_search_cache_key", return_value="cache-key")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response")
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.SearchCache")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_cache_hit_skips_llm_and_walk(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_cache_cls,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_build_key,
+        mock_root_fingerprint,
+        tmp_path,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = True
+        mock_config_cls.return_value = mock_config
+
+        cache = MagicMock()
+        cache.get.return_value = [file_a]
+        mock_cache_cls.return_value = cache
+
+        result = main(["query", "--root", str(tmp_path)])
+
+        assert result == 0
+        mock_llm_cls.assert_not_called()
+        mock_parse.assert_not_called()
+        mock_walk.assert_not_called()
+        cache.get.assert_called_once_with(key="cache-key", root_fingerprint="root-fp")
+
+    @patch("askfind.cli.compute_root_fingerprint", return_value="root-fp")
+    @patch("askfind.cli.build_search_cache_key", return_value="cache-key")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.SearchCache")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_cache_miss_stores_paths(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_cache_cls,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_build_key,
+        mock_root_fingerprint,
+        tmp_path,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = True
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_walk.return_value = [file_a]
+
+        cache = MagicMock()
+        cache.get.return_value = None
+        mock_cache_cls.return_value = cache
+
+        result = main(["query", "--root", str(tmp_path)])
+
+        assert result == 0
+        cache.get.assert_called_once_with(key="cache-key", root_fingerprint="root-fp")
+        cache.set.assert_called_once_with(
+            key="cache-key",
+            root_fingerprint="root-fp",
+            paths=[file_a],
+        )
 
     @patch("askfind.cli.walk_and_filter", return_value=[])
     @patch("askfind.cli.parse_llm_response", return_value={})
