@@ -20,6 +20,7 @@ class TestConfig:
         assert config.model == "openai/gpt-4o-mini"
         assert config.default_root == "."
         assert config.max_results == 50
+        assert config.respect_ignore_files is True
         assert config.editor == "vim"
 
     def test_from_toml_string(self, tmp_path):
@@ -43,12 +44,21 @@ class TestConfig:
         assert config.base_url == "https://openrouter.ai/api/v1"  # default preserved
 
     def test_save_and_reload(self, tmp_path):
-        config = Config(model="custom-model", editor="nano")
+        config = Config(model="custom-model", respect_ignore_files=False, editor="nano")
         config_file = tmp_path / "config.toml"
         config.save(config_file)
         reloaded = Config.from_file(config_file)
         assert reloaded.model == "custom-model"
+        assert reloaded.respect_ignore_files is False
         assert reloaded.editor == "nano"
+
+    def test_invalid_respect_ignore_files_type_falls_back_to_default(self, tmp_path):
+        toml_content = b'[search]\nrespect_ignore_files = "yes"\n'
+        config_file = tmp_path / "config.toml"
+        config_file.write_bytes(toml_content)
+
+        config = Config.from_file(config_file)
+        assert config.respect_ignore_files is True
 
 
 class TestGetApiKey:

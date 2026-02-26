@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.1** (Current) - CI hardening and quality gate improvements
+- **v0.1.2** (Current) - Ignore-aware traversal UX and release prep
+- **v0.1.1** - CI hardening and quality gate improvements
 - **v0.1.0** - Initial release with core functionality
 
 ## Roadmap
@@ -21,8 +22,8 @@
 - [ ] Memoization of LLM responses for similar queries
 
 #### Search Enhancements
-- [x] Git-aware searching (respect root `.gitignore` by default)
-- [x] Support for root `.askfindignore` files
+- [x] Git-aware searching (`.gitignore` support during traversal)
+- [x] Support for `.askfindignore` files during traversal
 - [ ] Symbolic link following options (`--follow-symlinks`)
 - [ ] Extended attribute filtering (macOS tags, file labels)
 - [ ] Binary file detection and exclusion

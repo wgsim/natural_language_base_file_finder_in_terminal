@@ -106,7 +106,14 @@ class InteractiveSession:
         try:
             raw = self.client.extract_filters(query)
             filters = parse_llm_response(raw)
-            paths = list(walk_and_filter(self.root, filters, max_results=self.config.max_results))
+            paths = list(
+                walk_and_filter(
+                    self.root,
+                    filters,
+                    max_results=self.config.max_results,
+                    respect_ignore_files=getattr(self.config, "respect_ignore_files", True),
+                )
+            )
             self.results = [FileResult.from_path(p) for p in paths]
 
             if not self.results:
@@ -129,4 +136,3 @@ class InteractiveSession:
             console.print()
         except (httpx.HTTPError, OSError, ValueError, RuntimeError) as e:
             console.print(f"[red]Error: {e}[/red]")
-

@@ -316,3 +316,26 @@ class TestWalkAndFilter:
         names = {p.name for p in results}
 
         assert "readme.md" in names
+
+    def test_nested_gitignore_applies_from_its_directory(self, tmp_path):
+        _make_tree(tmp_path)
+        (tmp_path / "src" / ".gitignore").write_text("*.py\n!auth/login.py\n")
+
+        results = list(walk_and_filter(tmp_path, SearchFilters()))
+        paths = {p.relative_to(tmp_path).as_posix() for p in results}
+
+        assert "src/auth/login.py" in paths
+        assert "src/auth/logout.py" not in paths
+        assert "tests/test_auth.py" in paths
+
+    def test_root_anchored_ignore_pattern_only_matches_root(self, tmp_path):
+        _make_tree(tmp_path)
+        nested_readme = tmp_path / "src" / "readme.md"
+        nested_readme.write_text("# Nested readme")
+        (tmp_path / ".gitignore").write_text("/readme.md\n")
+
+        results = list(walk_and_filter(tmp_path, SearchFilters()))
+        paths = {p.relative_to(tmp_path).as_posix() for p in results}
+
+        assert "readme.md" not in paths
+        assert "src/readme.md" in paths

@@ -26,6 +26,7 @@ class Config:
     model: str = "openai/gpt-4o-mini"
     default_root: str = "."
     max_results: int = 50
+    respect_ignore_files: bool = True
     editor: str = "vim"
 
     @classmethod
@@ -43,12 +44,16 @@ class Config:
             "model": provider,
             "default_root": search,
             "max_results": search,
+            "respect_ignore_files": search,
             "editor": interactive,
         }
         for field in fields(cls):
             source = field_map.get(field.name)
             if source and field.name in source:
                 kwargs[field.name] = source[field.name]
+        # Ignore malformed non-bool values and keep the safe default.
+        if "respect_ignore_files" in kwargs and not isinstance(kwargs["respect_ignore_files"], bool):
+            kwargs.pop("respect_ignore_files")
         return cls(**kwargs)
 
     def save(self, path: Path) -> None:
@@ -64,6 +69,7 @@ class Config:
             "search": {
                 "default_root": self.default_root,
                 "max_results": self.max_results,
+                "respect_ignore_files": self.respect_ignore_files,
             },
             "interactive": {
                 "editor": self.editor,
