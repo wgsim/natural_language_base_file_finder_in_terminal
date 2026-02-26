@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.4] - 2026-02-26
+
+### Added
+- Added parallel traversal controls:
+  - `parallel_workers` config option under `[search]` (default: `4`)
+  - `--workers` CLI option (`0` uses configured value)
+- Added worker selection to traversal benchmark script (`scripts/bench/benchmark_walk.py`).
+
+### Changed
+- Implemented threaded directory traversal path in walker for performance improvements.
+- Updated docs/roadmap to include parallel traversal status and configuration examples.
+- Updated package version metadata to `0.1.4`.
+
 ## [0.1.3] - 2026-02-26
 
 ### Added

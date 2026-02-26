@@ -448,3 +448,32 @@ class TestWalkAndFilter:
 
         assert target in results
         assert symlink in results
+
+    def test_parallel_workers_match_sequential_results(self, tmp_path):
+        _make_tree(tmp_path)
+        filters = SearchFilters(type="file")
+
+        sequential = {
+            p.relative_to(tmp_path).as_posix()
+            for p in walk_and_filter(tmp_path, filters, traversal_workers=1)
+        }
+        parallel = {
+            p.relative_to(tmp_path).as_posix()
+            for p in walk_and_filter(tmp_path, filters, traversal_workers=4)
+        }
+
+        assert parallel == sequential
+
+    def test_parallel_workers_respect_max_results(self, tmp_path):
+        _make_tree(tmp_path)
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file"),
+                max_results=2,
+                traversal_workers=4,
+            )
+        )
+
+        assert len(results) == 2

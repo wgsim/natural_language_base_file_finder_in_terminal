@@ -14,6 +14,7 @@ def _make_mock_config(default_root="."):
     mock_config.model = "test-model"
     mock_config.default_root = str(default_root)
     mock_config.max_results = 50
+    mock_config.parallel_workers = 4
     mock_config.respect_ignore_files = True
     mock_config.follow_symlinks = False
     mock_config.exclude_binary_files = True
@@ -58,6 +59,16 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["test"])
         assert args.max_results == 0  # 0 means use config value
+
+    def test_workers_default(self):
+        parser = build_parser()
+        args = parser.parse_args(["test"])
+        assert args.workers == 0
+
+    def test_workers_override(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--workers", "8"])
+        assert args.workers == 8
 
     def test_verbose_flag(self):
         parser = build_parser()
@@ -154,6 +165,7 @@ class TestMainIntegration:
         mock_config.base_url = "http://test"
         mock_config.model = "test-model"
         mock_config.max_results = 50
+        mock_config.parallel_workers = 4
         mock_config_cls.return_value = mock_config
 
         mock_client = MagicMock()
@@ -183,6 +195,7 @@ class TestMainIntegration:
         mock_config.base_url = "http://test"
         mock_config.model = "test-model"
         mock_config.max_results = 50
+        mock_config.parallel_workers = 4
         mock_config.default_root = str(default_root)
         mock_config_cls.return_value = mock_config
 
@@ -216,6 +229,7 @@ class TestMainIntegration:
         mock_config.base_url = "http://test"
         mock_config.model = "test-model"
         mock_config.max_results = 50
+        mock_config.parallel_workers = 4
         mock_config.default_root = str(default_root)
         mock_config_cls.return_value = mock_config
 
@@ -252,6 +266,12 @@ class TestConfigSubcommand:
         assert result == 2
 
     @patch("askfind.cli.Config.from_file")
+    def test_config_set_rejects_non_integer_parallel_workers(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "parallel_workers", "many"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
     def test_config_set_max_results_success(self, mock_config_cls):
         mock_config = MagicMock()
         mock_config_cls.return_value = mock_config
@@ -259,6 +279,21 @@ class TestConfigSubcommand:
         assert result == 0
         assert mock_config.max_results == 25
         mock_config.save.assert_called_once()
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_parallel_workers_success(self, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "set", "parallel_workers", "8"])
+        assert result == 0
+        assert mock_config.parallel_workers == 8
+        mock_config.save.assert_called_once()
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_parallel_workers_must_be_positive(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "parallel_workers", "0"])
+        assert result == 2
 
     @patch("askfind.cli.Config.from_file")
     def test_config_set_respect_ignore_files_success(self, mock_config_cls):
@@ -567,6 +602,32 @@ class TestMainAdditionalBranches:
 
         assert result == 1
         assert mock_walk.call_args.kwargs["exclude_binary_files"] is False
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_workers_flag_overrides_config_parallel_workers(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.parallel_workers = 2
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--workers", "8", "--root", str(tmp_path)])
+
+        assert result == 1
+        assert mock_walk.call_args.kwargs["traversal_workers"] == 8
+
+    @patch("askfind.cli.Config.from_file")
+    def test_negative_workers_cli_returns_2(self, mock_config_cls):
+        mock_config_cls.return_value = _make_mock_config()
+
+        result = main(["query", "--workers", "-1"])
+
+        assert result == 2
 
     @patch("askfind.search.reranker.rerank_results")
     @patch("askfind.cli.walk_and_filter")

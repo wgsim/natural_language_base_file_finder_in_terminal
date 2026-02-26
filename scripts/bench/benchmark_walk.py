@@ -34,6 +34,7 @@ def _run_once(
     max_results: int,
     follow_symlinks: bool,
     exclude_binary_files: bool,
+    traversal_workers: int,
 ) -> tuple[float, int]:
     start = time.perf_counter()
     results = list(
@@ -43,6 +44,7 @@ def _run_once(
             max_results=max_results,
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
+            traversal_workers=traversal_workers,
         )
     )
     elapsed = time.perf_counter() - start
@@ -61,6 +63,12 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--repeats", type=int, default=5, help="Runs per scenario (default: 5)")
     parser.add_argument("--max-results", type=int, default=0, help="Max results per run (0 = no limit)")
     parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Traversal workers (default: 4, set 1 for sequential baseline)",
+    )
+    parser.add_argument(
         "--follow-symlinks",
         action="store_true",
         help="Follow symlinks within root during traversal",
@@ -74,6 +82,8 @@ def _parse_args() -> argparse.Namespace:
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be >= 1")
+    if args.workers < 1:
+        parser.error("--workers must be >= 1")
     return args
 
 
@@ -94,6 +104,7 @@ def main() -> int:
                 max_results=args.max_results,
                 follow_symlinks=args.follow_symlinks,
                 exclude_binary_files=not args.include_binary,
+                traversal_workers=args.workers,
             )
             durations.append(elapsed)
             result_counts.append(count)

@@ -15,6 +15,7 @@ def _make_session_for_actions(result: FileResult) -> InteractiveSession:
         max_results=50,
         follow_symlinks=False,
         exclude_binary_files=True,
+        parallel_workers=4,
     )
     session.root = result.path.parent
     session.results = [result]
@@ -29,6 +30,7 @@ def _make_session_for_run(tmp_path) -> InteractiveSession:
         max_results=50,
         follow_symlinks=False,
         exclude_binary_files=True,
+        parallel_workers=4,
     )
     session.root = tmp_path.resolve()
     session.results = []
@@ -215,6 +217,7 @@ class TestInteractiveSessionSearch:
             max_results=50,
             follow_symlinks=False,
             exclude_binary_files=True,
+            parallel_workers=4,
         )
         session.root = tmp_path.resolve()
         session.results = []
@@ -237,6 +240,7 @@ class TestInteractiveSessionSearch:
             max_results=50,
             follow_symlinks=False,
             exclude_binary_files=True,
+            parallel_workers=4,
         )
         session.root = tmp_path.resolve()
         session.results = []
@@ -258,6 +262,7 @@ class TestInteractiveSessionSearch:
             max_results=50,
             follow_symlinks=False,
             exclude_binary_files=True,
+            parallel_workers=4,
         )
         session.root = tmp_path.resolve()
         session.results = []
@@ -284,6 +289,7 @@ class TestInteractiveSessionSearch:
             max_results=50,
             follow_symlinks=False,
             exclude_binary_files=True,
+            parallel_workers=4,
         )
         session.root = tmp_path.resolve()
         session.results = []
@@ -310,6 +316,7 @@ class TestInteractiveSessionSearch:
             max_results=50,
             follow_symlinks=True,
             exclude_binary_files=False,
+            parallel_workers=8,
         )
         session.root = tmp_path.resolve()
         session.results = []
@@ -322,3 +329,4 @@ class TestInteractiveSessionSearch:
 
         assert mock_walk.call_args.kwargs["follow_symlinks"] is True
         assert mock_walk.call_args.kwargs["exclude_binary_files"] is False
+        assert mock_walk.call_args.kwargs["traversal_workers"] == 8

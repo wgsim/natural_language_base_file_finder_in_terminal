@@ -114,6 +114,7 @@ class InteractiveSession:
                     respect_ignore_files=getattr(self.config, "respect_ignore_files", True),
                     follow_symlinks=getattr(self.config, "follow_symlinks", False),
                     exclude_binary_files=getattr(self.config, "exclude_binary_files", True),
+                    traversal_workers=getattr(self.config, "parallel_workers", 4),
                 )
             )
             self.results = [FileResult.from_path(p) for p in paths]

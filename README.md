@@ -62,6 +62,7 @@ askfind "configuration files in src excluding tests"
 askfind "python files" --verbose    # Show size and date
 askfind "python files" --json       # JSON output for scripting
 askfind "python files" --max 10     # Limit results
+askfind "python files" --workers 8  # Parallel traversal workers
 
 # Disable re-ranking for faster results
 askfind "python files" --no-rerank
@@ -107,6 +108,7 @@ askfind config show
 # Set configuration values
 askfind config set model "gpt-4o"
 askfind config set max_results 100
+askfind config set parallel_workers 4
 askfind config set respect_ignore_files false
 askfind config set follow_symlinks true
 askfind config set exclude_binary_files false
@@ -187,6 +189,7 @@ model = "openai/gpt-4o-mini"
 [search]
 default_root = "."
 max_results = 50
+parallel_workers = 4
 respect_ignore_files = true
 follow_symlinks = false
 exclude_binary_files = true
@@ -262,7 +265,7 @@ CI enforces a minimum coverage gate of 95%.
 
 ```bash
 # Traversal baseline (no LLM calls)
-PYTHONPATH=src python scripts/bench/benchmark_walk.py --root . --repeats 5
+PYTHONPATH=src python scripts/bench/benchmark_walk.py --root . --repeats 5 --workers 4
 ```
 
 ### Git Hooks

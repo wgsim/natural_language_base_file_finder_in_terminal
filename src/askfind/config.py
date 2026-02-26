@@ -26,6 +26,7 @@ class Config:
     model: str = "openai/gpt-4o-mini"
     default_root: str = "."
     max_results: int = 50
+    parallel_workers: int = 4
     respect_ignore_files: bool = True
     follow_symlinks: bool = False
     exclude_binary_files: bool = True
@@ -46,6 +47,7 @@ class Config:
             "model": provider,
             "default_root": search,
             "max_results": search,
+            "parallel_workers": search,
             "respect_ignore_files": search,
             "follow_symlinks": search,
             "exclude_binary_files": search,
@@ -59,6 +61,10 @@ class Config:
         for bool_key in ("respect_ignore_files", "follow_symlinks", "exclude_binary_files"):
             if bool_key in kwargs and not isinstance(kwargs[bool_key], bool):
                 kwargs.pop(bool_key)
+        if "parallel_workers" in kwargs:
+            workers = kwargs["parallel_workers"]
+            if not isinstance(workers, int) or workers < 1:
+                kwargs.pop("parallel_workers")
         return cls(**kwargs)
 
     def save(self, path: Path) -> None:
@@ -74,6 +80,7 @@ class Config:
             "search": {
                 "default_root": self.default_root,
                 "max_results": self.max_results,
+                "parallel_workers": self.parallel_workers,
                 "respect_ignore_files": self.respect_ignore_files,
                 "follow_symlinks": self.follow_symlinks,
                 "exclude_binary_files": self.exclude_binary_files,

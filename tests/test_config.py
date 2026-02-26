@@ -20,6 +20,7 @@ class TestConfig:
         assert config.model == "openai/gpt-4o-mini"
         assert config.default_root == "."
         assert config.max_results == 50
+        assert config.parallel_workers == 4
         assert config.respect_ignore_files is True
         assert config.follow_symlinks is False
         assert config.exclude_binary_files is True
@@ -49,6 +50,7 @@ class TestConfig:
         config = Config(
             model="custom-model",
             respect_ignore_files=False,
+            parallel_workers=8,
             follow_symlinks=True,
             exclude_binary_files=False,
             editor="nano",
@@ -58,6 +60,7 @@ class TestConfig:
         reloaded = Config.from_file(config_file)
         assert reloaded.model == "custom-model"
         assert reloaded.respect_ignore_files is False
+        assert reloaded.parallel_workers == 8
         assert reloaded.follow_symlinks is True
         assert reloaded.exclude_binary_files is False
         assert reloaded.editor == "nano"
@@ -78,6 +81,14 @@ class TestConfig:
         config = Config.from_file(config_file)
         assert config.follow_symlinks is False
         assert config.exclude_binary_files is True
+
+    def test_invalid_parallel_workers_type_or_value_falls_back_to_default(self, tmp_path):
+        toml_content = b'[search]\nparallel_workers = 0\n'
+        config_file = tmp_path / "config.toml"
+        config_file.write_bytes(toml_content)
+
+        config = Config.from_file(config_file)
+        assert config.parallel_workers == 4
 
 
 class TestGetApiKey:
