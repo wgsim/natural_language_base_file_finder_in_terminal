@@ -9,6 +9,7 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 🗣️ **Natural Language Queries** - "python files modified this week" instead of `find . -name "*.py" -mtime -7`
 - ⚡ **Optimized Search** - Cheapest-first filter application minimizes I/O operations
 - 🎯 **Semantic Re-ranking** - Optional LLM re-ranking orders results by relevance
+- 🙈 **Ignore-Aware Traversal** - Respects `.gitignore` and `.askfindignore` by default
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
 - 🔐 **Secure Secrets** - Keychain-first API key storage (macOS Keychain, Linux Secret Service, Windows Credential Manager)
 - 📋 **Multiple Output Formats** - Plain, verbose, or JSON output for scripting
@@ -62,6 +63,9 @@ askfind "python files" --max 10     # Limit results
 
 # Disable re-ranking for faster results
 askfind "python files" --no-rerank
+
+# Search everything (ignore files disabled)
+askfind "python files" --no-ignore
 ```
 
 ### Interactive Mode
@@ -73,8 +77,8 @@ askfind -i
 # In the REPL:
 askfind> python files in src
 Found 15 file(s):
-[1]  src/askfind/cli.py              2.1 KB  Jan 15
-[2]  src/askfind/config.py           1.8 KB  Jan 15
+[1]  src/askfind/cli.py              2.1 KB  Jan 15 2026
+[2]  src/askfind/config.py           1.8 KB  Jan 15 2026
 ...
 
 # Action commands
@@ -95,6 +99,7 @@ askfind config show
 # Set configuration values
 askfind config set model "gpt-4o"
 askfind config set max_results 100
+askfind config set respect_ignore_files false
 askfind config set editor "code"
 
 # List available models from your provider
@@ -109,6 +114,8 @@ askfind config models
    - Tier 0 (no I/O): type, depth, extension, name patterns
    - Tier 1 (stat call): modification time, size, permissions
    - Tier 2 (file read): content matching
+
+   By default, traversal respects root `.gitignore` and `.askfindignore`. Use `--no-ignore` to disable this behavior.
 
 3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance
 
@@ -168,6 +175,7 @@ model = "openai/gpt-4o-mini"
 [search]
 default_root = "."
 max_results = 50
+respect_ignore_files = true
 
 [interactive]
 editor = "vim"
@@ -234,7 +242,7 @@ conda run -n askfind_env pytest tests/test_filters.py -v
 conda run -n askfind_env pytest tests/ --cov=askfind --cov-report=html
 ```
 
-CI enforces a minimum coverage gate of 90%. Aim higher (for example, 95%+) when practical.
+CI enforces a minimum coverage gate of 95%.
 
 ### Git Hooks
 
@@ -248,7 +256,7 @@ git config core.hooksPath .githooks
 After setup, both `pre-commit` and `pre-push` run lint+tests using:
 
 ```bash
-conda run -n askfind_env sh -lc 'ruff check src tests && PYTHONPATH=src pytest -q'
+conda run -n askfind_env sh -lc 'python scripts/ci/check_dev_tool_pins.py && ruff check src tests && PYTHONPATH=src pytest -q'
 ```
 
 If `askfind_env` is not available, hooks fall back to `./pytest_env/bin/ruff` and

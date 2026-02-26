@@ -7,7 +7,6 @@ import os
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from askfind.search.filters import SearchFilters
 
@@ -17,12 +16,19 @@ IGNORE_FILES = (".gitignore", ".askfindignore")
 
 @dataclass(frozen=True)
 class _IgnoreRule:
+    base_dir: Path
     pattern: str
     anchored: bool
     directory_only: bool
     negated: bool
 
-    def matches(self, relative_path: str, name: str, is_dir: bool) -> bool:
+    def matches(self, path: Path, is_dir: bool) -> bool:
+        try:
+            relative_path = path.relative_to(self.base_dir).as_posix()
+        except ValueError:
+            return False
+        if not relative_path or relative_path == ".":
+            return False
         if self.directory_only and not is_dir:
             return False
 
@@ -30,21 +36,16 @@ class _IgnoreRule:
             return fnmatch.fnmatch(relative_path, self.pattern)
 
         if "/" in self.pattern:
-            return fnmatch.fnmatch(relative_path, self.pattern) or fnmatch.fnmatch(
-                relative_path,
-                f"**/{self.pattern}",
-            )
+            return fnmatch.fnmatch(relative_path, self.pattern)
 
-        return fnmatch.fnmatch(name, self.pattern)
+        # Pattern without slash applies to path components recursively.
+        return any(fnmatch.fnmatch(part, self.pattern) for part in relative_path.split("/"))
 
 
-IgnoreMatcher = Callable[[Path, bool], bool]
-
-
-def _load_ignore_rules(root: Path) -> list[_IgnoreRule]:
+def _load_ignore_rules(base_dir: Path) -> list[_IgnoreRule]:
     rules: list[_IgnoreRule] = []
     for ignore_name in IGNORE_FILES:
-        ignore_path = root / ignore_name
+        ignore_path = base_dir / ignore_name
         if not ignore_path.is_file():
             continue
         try:
@@ -74,6 +75,7 @@ def _load_ignore_rules(root: Path) -> list[_IgnoreRule]:
 
             rules.append(
                 _IgnoreRule(
+                    base_dir=base_dir,
                     pattern=line,
                     anchored=anchored,
                     directory_only=directory_only,
@@ -83,24 +85,12 @@ def _load_ignore_rules(root: Path) -> list[_IgnoreRule]:
     return rules
 
 
-def _build_ignore_matcher(root: Path) -> IgnoreMatcher | None:
-    rules = _load_ignore_rules(root)
-    if not rules:
-        return None
-
-    def matcher(path: Path, is_dir: bool) -> bool:
-        try:
-            relative_path = path.relative_to(root).as_posix()
-        except ValueError:
-            return False
-
-        ignored = False
-        for rule in rules:
-            if rule.matches(relative_path, path.name, is_dir):
-                ignored = not rule.negated
-        return ignored
-
-    return matcher
+def _is_ignored(path: Path, is_dir: bool, rules: list[_IgnoreRule]) -> bool:
+    ignored = False
+    for rule in rules:
+        if rule.matches(path, is_dir):
+            ignored = not rule.negated
+    return ignored
 
 
 def walk_and_filter(
@@ -113,9 +103,9 @@ def walk_and_filter(
 
     Filters are applied during traversal in cheapest-first order.
     """
-    ignore_matcher = _build_ignore_matcher(root) if respect_ignore_files else None
+    ignore_rules = _load_ignore_rules(root) if respect_ignore_files else None
     count = 0
-    for path in _scan_recursive(root, root, filters, depth=0, ignore_matcher=ignore_matcher):
+    for path in _scan_recursive(root, root, filters, depth=0, ignore_rules=ignore_rules):
         yield path
         count += 1
         if max_results and count >= max_results:
@@ -127,12 +117,18 @@ def _scan_recursive(
     directory: Path,
     filters: SearchFilters,
     depth: int,
-    ignore_matcher: IgnoreMatcher | None,
+    ignore_rules: list[_IgnoreRule] | None,
 ) -> Generator[Path, None, None]:
     try:
         entries = os.scandir(directory)
     except PermissionError:
         return
+
+    active_ignore_rules = ignore_rules
+    if active_ignore_rules is not None and directory != root:
+        local_rules = _load_ignore_rules(directory)
+        if local_rules:
+            active_ignore_rules = [*active_ignore_rules, *local_rules]
 
     dirs_to_recurse: list[tuple[Path, int]] = []
 
@@ -150,7 +146,7 @@ def _scan_recursive(
             is_file = entry.is_file(follow_symlinks=False)
             is_link = entry.is_symlink()
             entry_path = Path(entry.path)
-            if ignore_matcher and ignore_matcher(entry_path, is_dir):
+            if active_ignore_rules and _is_ignored(entry_path, is_dir, active_ignore_rules):
                 continue
 
             # Tier 0: type and depth (no I/O)
@@ -198,4 +194,4 @@ def _scan_recursive(
 
     # Recurse into subdirectories
     for dir_path, next_depth in dirs_to_recurse:
-        yield from _scan_recursive(root, dir_path, filters, next_depth, ignore_matcher)
+        yield from _scan_recursive(root, dir_path, filters, next_depth, active_ignore_rules)

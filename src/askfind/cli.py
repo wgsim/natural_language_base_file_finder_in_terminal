@@ -37,6 +37,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Override LLM model")
     parser.add_argument("--api-key", help="One-off API key")
     parser.add_argument("--no-rerank", action="store_true", help="Skip semantic re-ranking")
+    parser.add_argument(
+        "--no-ignore",
+        action="store_true",
+        help="Ignore .gitignore/.askfindignore rules during traversal",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--interactive-session", action="store_true", help=argparse.SUPPRESS)
     return parser
@@ -102,6 +107,15 @@ def _has_root_override(raw_argv: list[str]) -> bool:
     return False
 
 
+def _parse_bool(value: str) -> bool:
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ValueError("must be a boolean value (true/false)")
+
+
 def _handle_config(args: argparse.Namespace) -> int:
     config = Config.from_file(get_config_path())
     if args.config_action == "show":
@@ -115,6 +129,7 @@ def _handle_config(args: argparse.Namespace) -> int:
         table.add_row("model", config.model)
         table.add_row("default_root", config.default_root)
         table.add_row("max_results", str(config.max_results))
+        table.add_row("respect_ignore_files", str(config.respect_ignore_files))
         table.add_row("editor", config.editor)
         api_key = get_api_key()
         table.add_row("api_key", "****" + api_key[-4:] if api_key else "[not set]")
@@ -147,6 +162,13 @@ def _handle_config(args: argparse.Namespace) -> int:
                 value = int(value)
             except ValueError:
                 print(f"Error: '{args.key}' must be an integer.", file=sys.stderr)
+                return 2
+
+        if args.key == "respect_ignore_files":
+            try:
+                value = _parse_bool(value)
+            except ValueError:
+                print(f"Error: '{args.key}' must be true/false.", file=sys.stderr)
                 return 2
 
         setattr(config, args.key, value)
@@ -214,12 +236,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     config = Config.from_file(get_config_path())
+    respect_ignore_files = bool(config.respect_ignore_files) and not args.no_ignore
     root_value = args.root if _has_root_override(raw_argv) else config.default_root
     root_path = Path(root_value).resolve()
 
     # Handle --interactive-session (spawned pane)
     if args.interactive_session:
         from askfind.interactive.session import InteractiveSession
+        config.respect_ignore_files = respect_ignore_files
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -231,6 +255,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0  # Pane was spawned, exit this process
         # Fallback: run inline
         from askfind.interactive.session import InteractiveSession
+        config.respect_ignore_files = respect_ignore_files
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -265,7 +290,14 @@ def main(argv: list[str] | None = None) -> int:
             raw_response = client.extract_filters(args.query)
             logger.debug(f"Received LLM response: {raw_response[:200]}..." if len(raw_response) > 200 else f"Received LLM response: {raw_response}")
             filters = parse_llm_response(raw_response)
-            paths = list(walk_and_filter(root_path, filters, max_results=max_results))
+            paths = list(
+                walk_and_filter(
+                    root_path,
+                    filters,
+                    max_results=max_results,
+                    respect_ignore_files=respect_ignore_files,
+                )
+            )
             results = [FileResult.from_path(p) for p in paths]
 
             if not results:
