@@ -11,7 +11,7 @@ Be respectful and constructive. We're all here to build something useful togethe
 ### Reporting Bugs
 
 Before creating a bug report:
-1. Check the [existing issues](https://github.com/yourusername/askfind/issues)
+1. Check the [existing issues](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/issues)
 2. Try the latest version to see if it's already fixed
 3. Collect information about your environment
 
@@ -37,8 +37,8 @@ Feature suggestions are welcome! Please:
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/yourusername/askfind.git
-   cd askfind
+   git clone https://github.com/wgsim/natural_language_base_file_finder_in_terminal.git
+   cd natural_language_base_file_finder_in_terminal
    ```
 
 3. Create a feature branch:
@@ -81,9 +81,9 @@ Feature suggestions are welcome! Please:
 
 4. **Check Code Quality**
    ```bash
-   # We don't enforce linting yet, but these are helpful:
-   # black src/askfind tests/  # Auto-format
-   # mypy src/askfind          # Type checking
+   conda run -n askfind_env python scripts/ci/check_dev_tool_pins.py
+   conda run -n askfind_env ruff check src tests
+   conda run -n askfind_env python -m mypy src
    ```
 
 5. **Commit Changes**
@@ -150,6 +150,13 @@ refactor: simplify walker logic
    - Squash commits if requested
    - Maintainer will merge when approved
 
+#### Release Tags
+
+Tagging `v*` (for example `v0.1.3`) triggers `.github/workflows/release.yml`:
+- Build sdist/wheel via `python -m build`
+- Validate artifacts via `twine check`
+- Upload `dist/*` as workflow artifacts
+
 ## Development Guidelines
 
 ### Code Style
@@ -163,7 +170,7 @@ refactor: simplify walker logic
 ### Testing
 
 - **Philosophy**: Test-Driven Development (TDD)
-- **Coverage**: CI gate is >=90%; recommended target is >95% when practical
+- **Coverage**: CI gate is >=95%
 - **Test Types**: Unit tests for all modules
 - **Test Naming**: `test_<what>_<condition>_<expected>`
 
@@ -259,10 +266,9 @@ Write tests in `tests/test_formatter.py`.
 
 ## Getting Help
 
-- 💬 [GitHub Discussions](https://github.com/yourusername/askfind/discussions) - Ask questions
-- 🐛 [Issues](https://github.com/yourusername/askfind/issues) - Report bugs
+- 💬 [GitHub Discussions](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/discussions) - Ask questions
+- 🐛 [Issues](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/issues) - Report bugs
 - 📖 [Documentation](README.md) - Read the docs
-- 📧 Email: maintainer@example.com
 
 ## Recognition
 

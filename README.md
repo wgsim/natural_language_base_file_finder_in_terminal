@@ -10,6 +10,8 @@ Find files using plain English queries instead of complex shell commands. askfin
 - ⚡ **Optimized Search** - Cheapest-first filter application minimizes I/O operations
 - 🎯 **Semantic Re-ranking** - Optional LLM re-ranking orders results by relevance
 - 🙈 **Ignore-Aware Traversal** - Respects `.gitignore` and `.askfindignore` by default
+- 🔗 **Safe Symlink Traversal** - Optional `--follow-symlinks` follows links only inside search root
+- 🧪 **Binary File Exclusion** - Binary files are excluded by default (override with `--include-binary`)
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
 - 🔐 **Secure Secrets** - Keychain-first API key storage (macOS Keychain, Linux Secret Service, Windows Credential Manager)
 - 📋 **Multiple Output Formats** - Plain, verbose, or JSON output for scripting
@@ -24,8 +26,8 @@ Find files using plain English queries instead of complex shell commands. askfin
 ### Install from Source
 
 ```bash
-git clone https://github.com/yourusername/askfind.git
-cd askfind
+git clone https://github.com/wgsim/natural_language_base_file_finder_in_terminal.git
+cd natural_language_base_file_finder_in_terminal
 pip install -e ".[dev]"
 ```
 
@@ -66,6 +68,12 @@ askfind "python files" --no-rerank
 
 # Search everything (ignore files disabled)
 askfind "python files" --no-ignore
+
+# Follow symlinks within root
+askfind "python files" --follow-symlinks
+
+# Include binary files in results
+askfind "files in build output" --include-binary
 ```
 
 ### Interactive Mode
@@ -100,6 +108,8 @@ askfind config show
 askfind config set model "gpt-4o"
 askfind config set max_results 100
 askfind config set respect_ignore_files false
+askfind config set follow_symlinks true
+askfind config set exclude_binary_files false
 askfind config set editor "code"
 
 # List available models from your provider
@@ -116,6 +126,8 @@ askfind config models
    - Tier 2 (file read): content matching
 
    By default, traversal respects root `.gitignore` and `.askfindignore`. Use `--no-ignore` to disable this behavior.
+   Binary files are excluded by default to reduce noisy results. Use `--include-binary` when needed.
+   Symlinks are not followed unless `--follow-symlinks` is set.
 
 3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance
 
@@ -176,6 +188,8 @@ model = "openai/gpt-4o-mini"
 default_root = "."
 max_results = 50
 respect_ignore_files = true
+follow_symlinks = false
+exclude_binary_files = true
 
 [interactive]
 editor = "vim"
@@ -189,8 +203,8 @@ API keys are stored securely in your system keychain, not in the config file.
 
 ```bash
 # Clone repository
-git clone https://github.com/yourusername/askfind.git
-cd askfind
+git clone https://github.com/wgsim/natural_language_base_file_finder_in_terminal.git
+cd natural_language_base_file_finder_in_terminal
 
 # Create conda environment
 conda env create -f environment.yml
@@ -243,6 +257,13 @@ conda run -n askfind_env pytest tests/ --cov=askfind --cov-report=html
 ```
 
 CI enforces a minimum coverage gate of 95%.
+
+### Benchmark Traversal
+
+```bash
+# Traversal baseline (no LLM calls)
+PYTHONPATH=src python scripts/bench/benchmark_walk.py --root . --repeats 5
+```
 
 ### Git Hooks
 
@@ -340,6 +361,6 @@ Built with:
 
 ## Support
 
-- 🐛 [Report a bug](https://github.com/yourusername/askfind/issues)
-- 💡 [Request a feature](https://github.com/yourusername/askfind/issues)
-- 📖 [Documentation](https://github.com/yourusername/askfind/wiki)
+- 🐛 [Report a bug](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/issues)
+- 💡 [Request a feature](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/issues)
+- 📖 [Documentation](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/tree/main/docs)

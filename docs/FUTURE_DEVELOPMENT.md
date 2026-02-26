@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.2** (Current) - Ignore-aware traversal UX and release prep
+- **v0.1.3** (Current) - Symlink traversal, binary exclusion, and release workflow
+- **v0.1.2** - Ignore-aware traversal UX and release prep
 - **v0.1.1** - CI hardening and quality gate improvements
 - **v0.1.0** - Initial release with core functionality
 
@@ -24,9 +25,9 @@
 #### Search Enhancements
 - [x] Git-aware searching (`.gitignore` support during traversal)
 - [x] Support for `.askfindignore` files during traversal
-- [ ] Symbolic link following options (`--follow-symlinks`)
+- [x] Symbolic link following options (`--follow-symlinks`, root-bounded)
 - [ ] Extended attribute filtering (macOS tags, file labels)
-- [ ] Binary file detection and exclusion
+- [x] Binary file detection and exclusion (default on, `--include-binary` to override)
 - [ ] Archive file support (search inside .zip, .tar.gz)
 
 #### Filter Improvements
@@ -181,7 +182,7 @@
 
 ## Known Limitations
 
-### Current v0.1.0 Limitations
+### Current v0.1.2 Limitations
 
 1. **LLM Dependency**: Requires internet connection and API key
    - *Future*: Offline mode with rule-based fallback
@@ -260,7 +261,7 @@ Ideas from user feedback:
 
 ## Migration Guides
 
-### v0.1.0 → v0.2.0
+### v0.1.2 → v0.2.0
 *TBD when v0.2.0 is released*
 
 Expected changes:
@@ -345,9 +346,9 @@ Feature priority is determined by:
 
 Have ideas for the future of askfind? Open a discussion on GitHub!
 
-- 💬 [Discussions](https://github.com/yourusername/askfind/discussions)
-- 🐛 [Report Issues](https://github.com/yourusername/askfind/issues)
-- ✨ [Request Features](https://github.com/yourusername/askfind/issues/new?labels=enhancement)
+- 💬 [Discussions](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/discussions)
+- 🐛 [Report Issues](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/issues)
+- ✨ [Request Features](https://github.com/wgsim/natural_language_base_file_finder_in_terminal/issues/new?labels=enhancement)
 
 ---
 

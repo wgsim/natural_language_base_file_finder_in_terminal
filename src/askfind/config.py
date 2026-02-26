@@ -27,6 +27,8 @@ class Config:
     default_root: str = "."
     max_results: int = 50
     respect_ignore_files: bool = True
+    follow_symlinks: bool = False
+    exclude_binary_files: bool = True
     editor: str = "vim"
 
     @classmethod
@@ -45,6 +47,8 @@ class Config:
             "default_root": search,
             "max_results": search,
             "respect_ignore_files": search,
+            "follow_symlinks": search,
+            "exclude_binary_files": search,
             "editor": interactive,
         }
         for field in fields(cls):
@@ -52,8 +56,9 @@ class Config:
             if source and field.name in source:
                 kwargs[field.name] = source[field.name]
         # Ignore malformed non-bool values and keep the safe default.
-        if "respect_ignore_files" in kwargs and not isinstance(kwargs["respect_ignore_files"], bool):
-            kwargs.pop("respect_ignore_files")
+        for bool_key in ("respect_ignore_files", "follow_symlinks", "exclude_binary_files"):
+            if bool_key in kwargs and not isinstance(kwargs[bool_key], bool):
+                kwargs.pop(bool_key)
         return cls(**kwargs)
 
     def save(self, path: Path) -> None:
@@ -70,6 +75,8 @@ class Config:
                 "default_root": self.default_root,
                 "max_results": self.max_results,
                 "respect_ignore_files": self.respect_ignore_files,
+                "follow_symlinks": self.follow_symlinks,
+                "exclude_binary_files": self.exclude_binary_files,
             },
             "interactive": {
                 "editor": self.editor,

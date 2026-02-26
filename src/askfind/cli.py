@@ -42,6 +42,16 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Ignore .gitignore/.askfindignore rules during traversal",
     )
+    parser.add_argument(
+        "--follow-symlinks",
+        action="store_true",
+        help="Follow symlinked files/directories within the search root",
+    )
+    parser.add_argument(
+        "--include-binary",
+        action="store_true",
+        help="Include binary files in results (default excludes binary files)",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--interactive-session", action="store_true", help=argparse.SUPPRESS)
     return parser
@@ -130,6 +140,8 @@ def _handle_config(args: argparse.Namespace) -> int:
         table.add_row("default_root", config.default_root)
         table.add_row("max_results", str(config.max_results))
         table.add_row("respect_ignore_files", str(config.respect_ignore_files))
+        table.add_row("follow_symlinks", str(config.follow_symlinks))
+        table.add_row("exclude_binary_files", str(config.exclude_binary_files))
         table.add_row("editor", config.editor)
         api_key = get_api_key()
         table.add_row("api_key", "****" + api_key[-4:] if api_key else "[not set]")
@@ -164,7 +176,7 @@ def _handle_config(args: argparse.Namespace) -> int:
                 print(f"Error: '{args.key}' must be an integer.", file=sys.stderr)
                 return 2
 
-        if args.key == "respect_ignore_files":
+        if args.key in {"respect_ignore_files", "follow_symlinks", "exclude_binary_files"}:
             try:
                 value = _parse_bool(value)
             except ValueError:
@@ -237,6 +249,10 @@ def main(argv: list[str] | None = None) -> int:
 
     config = Config.from_file(get_config_path())
     respect_ignore_files = bool(config.respect_ignore_files) and not args.no_ignore
+    follow_symlinks = bool(getattr(config, "follow_symlinks", False) or args.follow_symlinks)
+    exclude_binary_files = bool(getattr(config, "exclude_binary_files", True))
+    if args.include_binary:
+        exclude_binary_files = False
     root_value = args.root if _has_root_override(raw_argv) else config.default_root
     root_path = Path(root_value).resolve()
 
@@ -244,6 +260,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.interactive_session:
         from askfind.interactive.session import InteractiveSession
         config.respect_ignore_files = respect_ignore_files
+        config.follow_symlinks = follow_symlinks
+        config.exclude_binary_files = exclude_binary_files
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -256,6 +274,8 @@ def main(argv: list[str] | None = None) -> int:
         # Fallback: run inline
         from askfind.interactive.session import InteractiveSession
         config.respect_ignore_files = respect_ignore_files
+        config.follow_symlinks = follow_symlinks
+        config.exclude_binary_files = exclude_binary_files
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -296,6 +316,8 @@ def main(argv: list[str] | None = None) -> int:
                     filters,
                     max_results=max_results,
                     respect_ignore_files=respect_ignore_files,
+                    follow_symlinks=follow_symlinks,
+                    exclude_binary_files=exclude_binary_files,
                 )
             )
             results = [FileResult.from_path(p) for p in paths]

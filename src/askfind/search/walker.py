@@ -12,6 +12,7 @@ from askfind.search.filters import SearchFilters
 
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".hg", ".svn"}
 IGNORE_FILES = (".gitignore", ".askfindignore")
+BINARY_PROBE_BYTES = 4096
 
 
 @dataclass(frozen=True)
@@ -93,19 +94,68 @@ def _is_ignored(path: Path, is_dir: bool, rules: list[_IgnoreRule]) -> bool:
     return ignored
 
 
+def _is_within_root(root: Path, path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+    except OSError:
+        return False
+    return resolved == root or root in resolved.parents
+
+
+def _directory_visit_key(path: Path, follow_symlinks: bool) -> tuple[int, int] | None:
+    try:
+        stat = path.stat() if follow_symlinks else path.lstat()
+    except OSError:
+        return None
+    return (stat.st_dev, stat.st_ino)
+
+
+def _is_binary_file(path: Path) -> bool:
+    try:
+        with path.open("rb") as handle:
+            sample = handle.read(BINARY_PROBE_BYTES)
+    except OSError:
+        return False
+    if not sample:
+        return False
+    if b"\x00" in sample:
+        return True
+    try:
+        sample.decode("utf-8")
+    except UnicodeDecodeError:
+        return True
+    return False
+
+
 def walk_and_filter(
     root: Path,
     filters: SearchFilters,
     max_results: int = 0,
     respect_ignore_files: bool = True,
+    follow_symlinks: bool = False,
+    exclude_binary_files: bool = True,
 ) -> Generator[Path, None, None]:
     """Walk filesystem from root, yielding paths that match filters.
 
     Filters are applied during traversal in cheapest-first order.
     """
-    ignore_rules = _load_ignore_rules(root) if respect_ignore_files else None
+    resolved_root = root.resolve()
+    ignore_rules = _load_ignore_rules(resolved_root) if respect_ignore_files else None
+    visited_dirs: set[tuple[int, int]] = set()
+    root_key = _directory_visit_key(resolved_root, follow_symlinks=follow_symlinks)
+    if root_key is not None:
+        visited_dirs.add(root_key)
     count = 0
-    for path in _scan_recursive(root, root, filters, depth=0, ignore_rules=ignore_rules):
+    for path in _scan_recursive(
+        root=resolved_root,
+        directory=resolved_root,
+        filters=filters,
+        depth=0,
+        ignore_rules=ignore_rules,
+        follow_symlinks=follow_symlinks,
+        exclude_binary_files=exclude_binary_files,
+        visited_dirs=visited_dirs,
+    ):
         yield path
         count += 1
         if max_results and count >= max_results:
@@ -118,6 +168,9 @@ def _scan_recursive(
     filters: SearchFilters,
     depth: int,
     ignore_rules: list[_IgnoreRule] | None,
+    follow_symlinks: bool,
+    exclude_binary_files: bool,
+    visited_dirs: set[tuple[int, int]],
 ) -> Generator[Path, None, None]:
     try:
         entries = os.scandir(directory)
@@ -134,18 +187,33 @@ def _scan_recursive(
 
     def schedule_recursion(is_dir: bool, path: Path, current_depth: int) -> None:
         """Schedule directory for recursion if it's a dir and within depth limit."""
-        if is_dir and filters.matches_depth(current_depth + 1):
-            dirs_to_recurse.append((path, current_depth + 1))
+        if not is_dir:
+            return
+        if not filters.matches_depth(current_depth + 1):
+            return
+        if follow_symlinks and not _is_within_root(root, path):
+            return
+        dir_key = _directory_visit_key(path, follow_symlinks=follow_symlinks)
+        if dir_key is not None:
+            if dir_key in visited_dirs:
+                return
+            visited_dirs.add(dir_key)
+        dirs_to_recurse.append((path, current_depth + 1))
 
     with entries:
         for entry in entries:
             if entry.name in SKIP_DIRS:
                 continue
 
-            is_dir = entry.is_dir(follow_symlinks=False)
-            is_file = entry.is_file(follow_symlinks=False)
-            is_link = entry.is_symlink()
+            try:
+                is_link = entry.is_symlink()
+                is_dir = entry.is_dir(follow_symlinks=follow_symlinks)
+                is_file = entry.is_file(follow_symlinks=follow_symlinks)
+            except OSError:
+                continue
             entry_path = Path(entry.path)
+            if follow_symlinks and is_link and (is_dir or is_file) and not _is_within_root(root, entry_path):
+                continue
             if active_ignore_rules and _is_ignored(entry_path, is_dir, active_ignore_rules):
                 continue
 
@@ -169,7 +237,7 @@ def _scan_recursive(
 
             # Tier 2: stat-based checks
             try:
-                stat = entry.stat(follow_symlinks=False)
+                stat = entry.stat(follow_symlinks=follow_symlinks)
             except OSError:
                 schedule_recursion(is_dir, entry_path, depth)
                 continue
@@ -178,10 +246,16 @@ def _scan_recursive(
                 schedule_recursion(is_dir, entry_path, depth)
                 continue
 
+            if exclude_binary_files and is_file and _is_binary_file(entry_path):
+                continue
+
             # Tier 3: content checks (most expensive, files only)
             if filters.has:  # Content filter exists
                 if is_file:
-                    if not filters.matches_content(entry_path):
+                    if not filters.matches_content(
+                        entry_path,
+                        follow_symlinks=follow_symlinks,
+                    ):
                         continue
                     yield entry_path
                 else:
@@ -194,4 +268,13 @@ def _scan_recursive(
 
     # Recurse into subdirectories
     for dir_path, next_depth in dirs_to_recurse:
-        yield from _scan_recursive(root, dir_path, filters, next_depth, active_ignore_rules)
+        yield from _scan_recursive(
+            root=root,
+            directory=dir_path,
+            filters=filters,
+            depth=next_depth,
+            ignore_rules=active_ignore_rules,
+            follow_symlinks=follow_symlinks,
+            exclude_binary_files=exclude_binary_files,
+            visited_dirs=visited_dirs,
+        )

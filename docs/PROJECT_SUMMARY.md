@@ -1,4 +1,4 @@
-# askfind v0.1.0 - Project Summary
+# askfind v0.1.0 - Project Summary (Historical Snapshot)
 
 > Complete implementation summary for natural language file finder
 
@@ -6,9 +6,10 @@
 
 **askfind** is a terminal tool that lets you find files using natural language queries instead of complex shell commands. It leverages LLM-powered filter extraction to understand what you're looking for and searches your filesystem intelligently.
 
-## Implementation Status: ✅ Complete
+## Implementation Status: ✅ Complete (for v0.1.0 scope)
 
-All planned features for v0.1.0 have been implemented and tested.
+All planned features for v0.1.0 were implemented and tested on 2026-02-02.
+For the latest project status, see `CHANGELOG.md` and `docs/FUTURE_DEVELOPMENT.md`.
 
 ### Timeline
 - **Start Date**: 2026-02-02
@@ -24,7 +25,7 @@ All planned features for v0.1.0 have been implemented and tested.
 - **Source Lines**: ~1,500 lines of Python code
 - **Test Lines**: ~900 lines of test code
 - **Documentation**: ~1,000 lines
-- **Test Coverage**: 90%+ (estimated)
+- **Test Coverage**: Historical value for this snapshot (current CI gate is 95%)
 - **Code-to-Test Ratio**: 1:0.6
 
 ### Module Breakdown
@@ -300,7 +301,7 @@ See FUTURE_DEVELOPMENT.md for planned solutions.
 
 See full roadmap in FUTURE_DEVELOPMENT.md.
 
-## Success Metrics (v0.1.0)
+## Success Metrics (v0.1.0 Snapshot)
 
 ✅ All features implemented
 ✅ 73 tests passing
@@ -322,6 +323,7 @@ MIT License - See LICENSE file for details.
 
 ---
 
-**Project Status**: ✅ Ready for Release
-**Version**: 0.1.0
-**Last Updated**: 2026-02-02
+**Project Status**: ✅ Historical milestone captured
+**Snapshot Version**: 0.1.0
+**Current Project Version**: 0.1.2
+**Last Updated**: 2026-02-25

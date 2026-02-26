@@ -112,6 +112,8 @@ class InteractiveSession:
                     filters,
                     max_results=self.config.max_results,
                     respect_ignore_files=getattr(self.config, "respect_ignore_files", True),
+                    follow_symlinks=getattr(self.config, "follow_symlinks", False),
+                    exclude_binary_files=getattr(self.config, "exclude_binary_files", True),
                 )
             )
             self.results = [FileResult.from_path(p) for p in paths]

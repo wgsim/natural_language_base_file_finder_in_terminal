@@ -214,12 +214,12 @@ class SearchFilters:
                 return False
         return True
 
-    def matches_content(self, filepath: Path) -> bool:
+    def matches_content(self, filepath: Path, *, follow_symlinks: bool = False) -> bool:
         if not self.has:
             return True
         try:
-            # Skip symlinks to prevent reading files outside search root
-            if filepath.is_symlink():
+            # Skip symlinks by default to prevent reading files outside search root.
+            if filepath.is_symlink() and not follow_symlinks:
                 return False
             # Check file size to prevent OOM on large files
             file_size = filepath.stat().st_size

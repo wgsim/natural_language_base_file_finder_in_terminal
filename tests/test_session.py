@@ -10,7 +10,12 @@ from rich.table import Table
 
 def _make_session_for_actions(result: FileResult) -> InteractiveSession:
     session = InteractiveSession.__new__(InteractiveSession)
-    session.config = SimpleNamespace(editor="vim", max_results=50)
+    session.config = SimpleNamespace(
+        editor="vim",
+        max_results=50,
+        follow_symlinks=False,
+        exclude_binary_files=True,
+    )
     session.root = result.path.parent
     session.results = [result]
     session.client = MagicMock()
@@ -19,7 +24,12 @@ def _make_session_for_actions(result: FileResult) -> InteractiveSession:
 
 def _make_session_for_run(tmp_path) -> InteractiveSession:
     session = InteractiveSession.__new__(InteractiveSession)
-    session.config = SimpleNamespace(editor="vim", max_results=50)
+    session.config = SimpleNamespace(
+        editor="vim",
+        max_results=50,
+        follow_symlinks=False,
+        exclude_binary_files=True,
+    )
     session.root = tmp_path.resolve()
     session.results = []
     session.client = MagicMock()
@@ -200,7 +210,12 @@ class TestInteractiveSessionSearch:
         file_path.write_text("print('ok')\n")
 
         session = InteractiveSession.__new__(InteractiveSession)
-        session.config = SimpleNamespace(editor="vim", max_results=50)
+        session.config = SimpleNamespace(
+            editor="vim",
+            max_results=50,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+        )
         session.root = tmp_path.resolve()
         session.results = []
         session.client = MagicMock()
@@ -217,7 +232,12 @@ class TestInteractiveSessionSearch:
     @patch("askfind.interactive.session.console.print")
     def test_search_handles_exceptions_without_raising(self, mock_print, tmp_path):
         session = InteractiveSession.__new__(InteractiveSession)
-        session.config = SimpleNamespace(editor="vim", max_results=50)
+        session.config = SimpleNamespace(
+            editor="vim",
+            max_results=50,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+        )
         session.root = tmp_path.resolve()
         session.results = []
         session.client = MagicMock()
@@ -233,7 +253,12 @@ class TestInteractiveSessionSearch:
     @patch("askfind.interactive.session.console.print")
     def test_search_prints_no_results_message(self, mock_print, mock_parse, _mock_walk, tmp_path):
         session = InteractiveSession.__new__(InteractiveSession)
-        session.config = SimpleNamespace(editor="vim", max_results=50)
+        session.config = SimpleNamespace(
+            editor="vim",
+            max_results=50,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+        )
         session.root = tmp_path.resolve()
         session.results = []
         session.client = MagicMock()
@@ -254,7 +279,12 @@ class TestInteractiveSessionSearch:
         file_path.write_text("print('ok')\n")
 
         session = InteractiveSession.__new__(InteractiveSession)
-        session.config = SimpleNamespace(editor="vim", max_results=50)
+        session.config = SimpleNamespace(
+            editor="vim",
+            max_results=50,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+        )
         session.root = tmp_path.resolve()
         session.results = []
         session.client = MagicMock()
@@ -270,3 +300,25 @@ class TestInteractiveSessionSearch:
         assert len(table_calls) == 1
         assert table_calls[0].args[0].row_count == 1
         assert any(call_.args == () for call_ in mock_print.call_args_list)
+
+    @patch("askfind.interactive.session.walk_and_filter", return_value=[])
+    @patch("askfind.interactive.session.parse_llm_response")
+    def test_search_passes_follow_symlinks_and_binary_options(self, mock_parse, mock_walk, tmp_path):
+        session = InteractiveSession.__new__(InteractiveSession)
+        session.config = SimpleNamespace(
+            editor="vim",
+            max_results=50,
+            follow_symlinks=True,
+            exclude_binary_files=False,
+        )
+        session.root = tmp_path.resolve()
+        session.results = []
+        session.client = MagicMock()
+        session.client.extract_filters.return_value = '{"ext": [".py"]}'
+
+        mock_parse.return_value = MagicMock()
+
+        session._search("python files")
+
+        assert mock_walk.call_args.kwargs["follow_symlinks"] is True
+        assert mock_walk.call_args.kwargs["exclude_binary_files"] is False
