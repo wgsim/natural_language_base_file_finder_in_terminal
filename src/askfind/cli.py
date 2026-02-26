@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("-i", "--interactive", action="store_true", help="Launch interactive mode")
     parser.add_argument("-r", "--root", default=".", help="Search root directory")
     parser.add_argument("-m", "--max", type=int, default=0, dest="max_results", help="Max results (0=use config)")
+    parser.add_argument("--workers", type=int, default=0, help="Traversal workers (0=use config)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show file metadata")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
     parser.add_argument("--model", help="Override LLM model")
@@ -139,6 +140,7 @@ def _handle_config(args: argparse.Namespace) -> int:
         table.add_row("model", config.model)
         table.add_row("default_root", config.default_root)
         table.add_row("max_results", str(config.max_results))
+        table.add_row("parallel_workers", str(config.parallel_workers))
         table.add_row("respect_ignore_files", str(config.respect_ignore_files))
         table.add_row("follow_symlinks", str(config.follow_symlinks))
         table.add_row("exclude_binary_files", str(config.exclude_binary_files))
@@ -168,12 +170,15 @@ def _handle_config(args: argparse.Namespace) -> int:
                 print(f"Error: {error}", file=sys.stderr)
                 return 2
 
-        # Coerce max_results to int
-        if args.key == "max_results":
+        # Coerce integer config values
+        if args.key in {"max_results", "parallel_workers"}:
             try:
                 value = int(value)
             except ValueError:
                 print(f"Error: '{args.key}' must be an integer.", file=sys.stderr)
+                return 2
+            if args.key == "parallel_workers" and value < 1:
+                print("Error: 'parallel_workers' must be >= 1.", file=sys.stderr)
                 return 2
 
         if args.key in {"respect_ignore_files", "follow_symlinks", "exclude_binary_files"}:
@@ -251,6 +256,11 @@ def main(argv: list[str] | None = None) -> int:
     respect_ignore_files = bool(config.respect_ignore_files) and not args.no_ignore
     follow_symlinks = bool(getattr(config, "follow_symlinks", False) or args.follow_symlinks)
     exclude_binary_files = bool(getattr(config, "exclude_binary_files", True))
+    if args.workers < 0:
+        print("Error: --workers must be >= 0.", file=sys.stderr)
+        return 2
+    parallel_workers = args.workers or int(getattr(config, "parallel_workers", 4))
+    parallel_workers = max(1, parallel_workers)
     if args.include_binary:
         exclude_binary_files = False
     root_value = args.root if _has_root_override(raw_argv) else config.default_root
@@ -262,6 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         config.respect_ignore_files = respect_ignore_files
         config.follow_symlinks = follow_symlinks
         config.exclude_binary_files = exclude_binary_files
+        config.parallel_workers = parallel_workers
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -276,6 +287,7 @@ def main(argv: list[str] | None = None) -> int:
         config.respect_ignore_files = respect_ignore_files
         config.follow_symlinks = follow_symlinks
         config.exclude_binary_files = exclude_binary_files
+        config.parallel_workers = parallel_workers
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -318,6 +330,7 @@ def main(argv: list[str] | None = None) -> int:
                     respect_ignore_files=respect_ignore_files,
                     follow_symlinks=follow_symlinks,
                     exclude_binary_files=exclude_binary_files,
+                    traversal_workers=parallel_workers,
                 )
             )
             results = [FileResult.from_path(p) for p in paths]

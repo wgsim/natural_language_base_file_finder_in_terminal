@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.3** (Current) - Symlink traversal, binary exclusion, and release workflow
+- **v0.1.4** (Current) - Parallel traversal workers and performance baseline updates
+- **v0.1.3** - Symlink traversal, binary exclusion, and release workflow
 - **v0.1.2** - Ignore-aware traversal UX and release prep
 - **v0.1.1** - CI hardening and quality gate improvements
 - **v0.1.0** - Initial release with core functionality
@@ -16,7 +17,7 @@
 **Target:** Q2 2026
 
 #### Performance Optimizations
-- [ ] Parallel directory traversal using asyncio/threading
+- [x] Parallel directory traversal using threading (`parallel_workers`, `--workers`)
 - [ ] Caching layer for repeated queries
 - [ ] Index generation for large codebases (optional)
 - [ ] Incremental search with early termination
