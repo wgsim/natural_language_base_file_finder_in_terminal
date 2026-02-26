@@ -259,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.workers < 0:
         print("Error: --workers must be >= 0.", file=sys.stderr)
         return 2
-    parallel_workers = args.workers or int(getattr(config, "parallel_workers", 4))
+    parallel_workers = args.workers or int(getattr(config, "parallel_workers", 1))
     parallel_workers = max(1, parallel_workers)
     if args.include_binary:
         exclude_binary_files = False
