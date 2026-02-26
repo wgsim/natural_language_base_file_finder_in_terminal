@@ -92,6 +92,11 @@ class TestBuildParser:
         args = parser.parse_args(["test", "--no-cache"])
         assert args.no_cache is True
 
+    def test_cache_stats_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--cache-stats"])
+        assert args.cache_stats is True
+
     def test_no_ignore_flag(self):
         parser = build_parser()
         args = parser.parse_args(["test", "--no-ignore"])
@@ -657,6 +662,65 @@ class TestMainAdditionalBranches:
 
         assert result == 1
         mock_cache_cls.assert_not_called()
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_cache_stats_flag_prints_disabled_when_cache_off(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path, capsys
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--cache-stats", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 1
+        assert "cache: disabled" in captured.err
+
+    @patch("askfind.cli.compute_root_fingerprint", return_value="root-fp")
+    @patch("askfind.cli.build_search_cache_key", return_value="cache-key")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.SearchCache")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_cache_stats_flag_prints_hits_misses_sets(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_cache_cls,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_build_key,
+        mock_root_fingerprint,
+        tmp_path,
+        capsys,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = True
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_walk.return_value = [file_a]
+
+        cache = MagicMock()
+        cache.get.return_value = None
+        cache.stats.return_value = {"hits": 0, "misses": 1, "sets": 1}
+        mock_cache_cls.return_value = cache
+
+        result = main(["query", "--cache-stats", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "cache: hits=0 misses=1 sets=1" in captured.err
 
     @patch("askfind.cli.compute_root_fingerprint", return_value="root-fp")
     @patch("askfind.cli.build_search_cache_key", return_value="cache-key")

@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.6] - 2026-02-26
+
+### Added
+- Added cache observability support:
+  - `--cache-stats` CLI switch to print per-command cache counters (`hits`, `misses`, `sets`) to stderr.
+- Added interactive-mode cache integration:
+  - interactive queries now use the same file-based cache policy (enabled/TTL) as single-command mode.
+
+### Changed
+- Fixed CI type-check failure by replacing PEP 695 `type` aliases with mypy-compatible `TypeAlias` declarations in the cache module.
+- Interactive search now explicitly forwards `respect_ignore_files` to traversal.
+
 ## [0.1.5] - 2026-02-26
 
 ### Added

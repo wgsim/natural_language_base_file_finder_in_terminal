@@ -6,7 +6,9 @@ import hashlib
 import json
 import os
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TypeAlias
 
 
 CACHE_DIR = Path.home() / ".cache" / "askfind"
@@ -16,8 +18,15 @@ MAX_CACHE_ENTRIES = 256
 ROOT_FINGERPRINT_SAMPLE_LIMIT = 256
 
 
-type CacheEntry = dict[str, object]
-type CacheEntries = dict[str, CacheEntry]
+CacheEntry: TypeAlias = dict[str, object]
+CacheEntries: TypeAlias = dict[str, CacheEntry]
+
+
+@dataclass
+class SearchCacheStats:
+    hits: int = 0
+    misses: int = 0
+    sets: int = 0
 
 
 def build_search_cache_key(
@@ -92,6 +101,7 @@ class SearchCache:
         self.cache_path = cache_path
         self.ttl_seconds = max(1, ttl_seconds)
         self.max_entries = max(1, max_entries)
+        self._stats = SearchCacheStats()
 
     def get(self, *, key: str, root_fingerprint: str) -> list[Path] | None:
         entries = self._load_entries()
@@ -100,21 +110,25 @@ class SearchCache:
 
         entry = entries.get(key)
         if entry is None:
+            self._stats.misses += 1
             if changed:
                 self._save_entries(entries)
             return None
 
         if entry.get("root_fingerprint") != root_fingerprint:
+            self._stats.misses += 1
             if changed:
                 self._save_entries(entries)
             return None
 
         paths_obj = entry.get("paths")
         if not isinstance(paths_obj, list) or not all(isinstance(p, str) for p in paths_obj):
+            self._stats.misses += 1
             if changed:
                 self._save_entries(entries)
             return None
 
+        self._stats.hits += 1
         if changed:
             self._save_entries(entries)
         return [Path(p) for p in paths_obj]
@@ -127,8 +141,16 @@ class SearchCache:
             "root_fingerprint": root_fingerprint,
             "paths": [str(p) for p in paths],
         }
+        self._stats.sets += 1
         self._prune(entries, now=now)
         self._save_entries(entries)
+
+    def stats(self) -> dict[str, int]:
+        return {
+            "hits": self._stats.hits,
+            "misses": self._stats.misses,
+            "sets": self._stats.sets,
+        }
 
     def _load_entries(self) -> CacheEntries:
         try:

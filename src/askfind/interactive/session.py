@@ -15,10 +15,13 @@ from askfind.config import Config, get_api_key
 from askfind.interactive.commands import copy_content, copy_path, open_in_editor, preview
 from askfind.llm.client import LLMClient
 from askfind.llm.parser import parse_llm_response
+from askfind.logging_config import get_logger
 from askfind.output.formatter import FileResult, human_size
+from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
 from askfind.search.walker import walk_and_filter
 
 console = Console()
+logger = get_logger(__name__)
 
 HELP_TEXT = """\
 [bold]Available commands:[/bold]
@@ -48,6 +51,14 @@ class InteractiveSession:
             api_key=api_key,
             model=config.model,
         )
+
+        cache_enabled = getattr(config, "cache_enabled", True)
+        cache_ttl_seconds = getattr(config, "cache_ttl_seconds", 300)
+        if not isinstance(cache_enabled, bool):
+            cache_enabled = True
+        if not isinstance(cache_ttl_seconds, int) or cache_ttl_seconds < 1:
+            cache_ttl_seconds = 300
+        self.cache = SearchCache(ttl_seconds=cache_ttl_seconds) if cache_enabled else None
 
     def run(self) -> None:
         session: PromptSession[str] = PromptSession()
@@ -104,20 +115,93 @@ class InteractiveSession:
 
     def _search(self, query: str) -> None:
         try:
-            raw = self.client.extract_filters(query)
-            filters = parse_llm_response(raw)
-            paths = list(
-                walk_and_filter(
-                    self.root,
-                    filters,
-                    max_results=self.config.max_results,
-                    respect_ignore_files=getattr(self.config, "respect_ignore_files", True),
-                    follow_symlinks=getattr(self.config, "follow_symlinks", False),
-                    exclude_binary_files=getattr(self.config, "exclude_binary_files", True),
-                    traversal_workers=getattr(self.config, "parallel_workers", 1),
+            respect_ignore_files = getattr(self.config, "respect_ignore_files", True)
+            follow_symlinks = getattr(self.config, "follow_symlinks", False)
+            exclude_binary_files = getattr(self.config, "exclude_binary_files", True)
+            traversal_workers = getattr(self.config, "parallel_workers", 1)
+            if not isinstance(respect_ignore_files, bool):
+                respect_ignore_files = True
+            if not isinstance(follow_symlinks, bool):
+                follow_symlinks = False
+            if not isinstance(exclude_binary_files, bool):
+                exclude_binary_files = True
+            if not isinstance(traversal_workers, int) or traversal_workers < 1:
+                traversal_workers = 1
+
+            max_results = getattr(self.config, "max_results", 50)
+            if not isinstance(max_results, int):
+                max_results = 50
+
+            model = getattr(self.config, "model", "")
+            if not isinstance(model, str):
+                model = ""
+            base_url = getattr(self.config, "base_url", "")
+            if not isinstance(base_url, str):
+                base_url = ""
+
+            cached_paths: list[Path] | None = None
+            cache_key: str | None = None
+            root_fingerprint: str | None = None
+            if self.cache is not None:
+                cache_key = build_search_cache_key(
+                    query=query,
+                    root=self.root,
+                    model=model,
+                    base_url=base_url,
+                    max_results=max_results,
+                    no_rerank=True,
+                    respect_ignore_files=respect_ignore_files,
+                    follow_symlinks=follow_symlinks,
+                    exclude_binary_files=exclude_binary_files,
+                    traversal_workers=traversal_workers,
                 )
-            )
-            self.results = [FileResult.from_path(p) for p in paths]
+                root_fingerprint = compute_root_fingerprint(self.root)
+                try:
+                    cached_paths = self.cache.get(key=cache_key, root_fingerprint=root_fingerprint)
+                except OSError:
+                    logger.debug("Interactive cache read failed; continuing without cache", exc_info=True)
+                    cached_paths = None
+
+            if cached_paths is not None:
+                loaded: list[FileResult] = []
+                for path in cached_paths:
+                    try:
+                        loaded.append(FileResult.from_path(path))
+                    except OSError:
+                        cached_paths = None
+                        break
+                if cached_paths is not None:
+                    self.results = loaded
+                else:
+                    self.results = []
+            else:
+                self.results = []
+
+            if cached_paths is None:
+                raw = self.client.extract_filters(query)
+                filters = parse_llm_response(raw)
+                paths = list(
+                    walk_and_filter(
+                        self.root,
+                        filters,
+                        max_results=max_results,
+                        respect_ignore_files=respect_ignore_files,
+                        follow_symlinks=follow_symlinks,
+                        exclude_binary_files=exclude_binary_files,
+                        traversal_workers=traversal_workers,
+                    )
+                )
+                self.results = [FileResult.from_path(p) for p in paths]
+
+                if self.cache is not None and cache_key is not None and root_fingerprint is not None:
+                    try:
+                        self.cache.set(
+                            key=cache_key,
+                            root_fingerprint=root_fingerprint,
+                            paths=[r.path for r in self.results],
+                        )
+                    except OSError:
+                        logger.debug("Interactive cache write failed; continuing without cache", exc_info=True)
 
             if not self.results:
                 console.print("[dim]No files found.[/dim]")
