@@ -16,6 +16,7 @@ from askfind.config import Config, get_api_key, get_config_path, set_api_key
 from askfind.llm.client import LLMClient
 from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import setup_logging, get_logger
+from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
 
 logger = get_logger(__name__)
 from askfind.output.formatter import FileResult, format_json, format_plain, format_verbose
@@ -38,6 +39,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Override LLM model")
     parser.add_argument("--api-key", help="One-off API key")
     parser.add_argument("--no-rerank", action="store_true", help="Skip semantic re-ranking")
+    parser.add_argument("--no-cache", action="store_true", help="Disable search cache for this command")
     parser.add_argument(
         "--no-ignore",
         action="store_true",
@@ -127,6 +129,18 @@ def _parse_bool(value: str) -> bool:
     raise ValueError("must be a boolean value (true/false)")
 
 
+def _read_bool_config(value: object, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def _read_positive_int_config(value: object, *, default: int) -> int:
+    if isinstance(value, int) and value >= 1:
+        return value
+    return default
+
+
 def _handle_config(args: argparse.Namespace) -> int:
     config = Config.from_file(get_config_path())
     if args.config_action == "show":
@@ -141,6 +155,8 @@ def _handle_config(args: argparse.Namespace) -> int:
         table.add_row("default_root", config.default_root)
         table.add_row("max_results", str(config.max_results))
         table.add_row("parallel_workers", str(config.parallel_workers))
+        table.add_row("cache_enabled", str(config.cache_enabled))
+        table.add_row("cache_ttl_seconds", str(config.cache_ttl_seconds))
         table.add_row("respect_ignore_files", str(config.respect_ignore_files))
         table.add_row("follow_symlinks", str(config.follow_symlinks))
         table.add_row("exclude_binary_files", str(config.exclude_binary_files))
@@ -171,17 +187,17 @@ def _handle_config(args: argparse.Namespace) -> int:
                 return 2
 
         # Coerce integer config values
-        if args.key in {"max_results", "parallel_workers"}:
+        if args.key in {"max_results", "parallel_workers", "cache_ttl_seconds"}:
             try:
                 value = int(value)
             except ValueError:
                 print(f"Error: '{args.key}' must be an integer.", file=sys.stderr)
                 return 2
-            if args.key == "parallel_workers" and value < 1:
-                print("Error: 'parallel_workers' must be >= 1.", file=sys.stderr)
+            if args.key in {"parallel_workers", "cache_ttl_seconds"} and value < 1:
+                print(f"Error: '{args.key}' must be >= 1.", file=sys.stderr)
                 return 2
 
-        if args.key in {"respect_ignore_files", "follow_symlinks", "exclude_binary_files"}:
+        if args.key in {"cache_enabled", "respect_ignore_files", "follow_symlinks", "exclude_binary_files"}:
             try:
                 value = _parse_bool(value)
             except ValueError:
@@ -253,14 +269,34 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     config = Config.from_file(get_config_path())
-    respect_ignore_files = bool(config.respect_ignore_files) and not args.no_ignore
-    follow_symlinks = bool(getattr(config, "follow_symlinks", False) or args.follow_symlinks)
-    exclude_binary_files = bool(getattr(config, "exclude_binary_files", True))
+    respect_ignore_files = _read_bool_config(
+        getattr(config, "respect_ignore_files", True),
+        default=True,
+    ) and not args.no_ignore
+    follow_symlinks = _read_bool_config(
+        getattr(config, "follow_symlinks", False),
+        default=False,
+    ) or args.follow_symlinks
+    exclude_binary_files = _read_bool_config(
+        getattr(config, "exclude_binary_files", True),
+        default=True,
+    )
+    cache_enabled = _read_bool_config(
+        getattr(config, "cache_enabled", True),
+        default=True,
+    ) and not args.no_cache
+    cache_ttl_seconds = _read_positive_int_config(
+        getattr(config, "cache_ttl_seconds", 300),
+        default=300,
+    )
     if args.workers < 0:
         print("Error: --workers must be >= 0.", file=sys.stderr)
         return 2
-    parallel_workers = args.workers or int(getattr(config, "parallel_workers", 1))
-    parallel_workers = max(1, parallel_workers)
+    configured_workers = _read_positive_int_config(
+        getattr(config, "parallel_workers", 1),
+        default=1,
+    )
+    parallel_workers = args.workers or configured_workers
     if args.include_binary:
         exclude_binary_files = False
     root_value = args.root if _has_root_override(raw_argv) else config.default_root
@@ -273,6 +309,8 @@ def main(argv: list[str] | None = None) -> int:
         config.follow_symlinks = follow_symlinks
         config.exclude_binary_files = exclude_binary_files
         config.parallel_workers = parallel_workers
+        config.cache_enabled = cache_enabled
+        config.cache_ttl_seconds = cache_ttl_seconds
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -288,6 +326,8 @@ def main(argv: list[str] | None = None) -> int:
         config.follow_symlinks = follow_symlinks
         config.exclude_binary_files = exclude_binary_files
         config.parallel_workers = parallel_workers
+        config.cache_enabled = cache_enabled
+        config.cache_ttl_seconds = cache_ttl_seconds
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -315,41 +355,96 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: Query exceeds maximum length of {MAX_QUERY_LENGTH} characters.", file=sys.stderr)
         return 2
 
+    cache = SearchCache(ttl_seconds=cache_ttl_seconds) if cache_enabled else None
+    cache_key: str | None = None
+    root_fingerprint: str | None = None
+    if cache is not None:
+        cache_key = build_search_cache_key(
+            query=args.query,
+            root=root_path,
+            model=model,
+            base_url=config.base_url,
+            max_results=max_results,
+            no_rerank=args.no_rerank,
+            respect_ignore_files=respect_ignore_files,
+            follow_symlinks=follow_symlinks,
+            exclude_binary_files=exclude_binary_files,
+            traversal_workers=parallel_workers,
+        )
+        root_fingerprint = compute_root_fingerprint(root_path)
+
     try:
-        logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
-        with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
-            logger.debug(f"Sending query to LLM: {args.query}")
-            raw_response = client.extract_filters(args.query)
-            logger.debug(f"Received LLM response: {raw_response[:200]}..." if len(raw_response) > 200 else f"Received LLM response: {raw_response}")
-            filters = parse_llm_response(raw_response)
-            paths = list(
-                walk_and_filter(
-                    root_path,
-                    filters,
-                    max_results=max_results,
-                    respect_ignore_files=respect_ignore_files,
-                    follow_symlinks=follow_symlinks,
-                    exclude_binary_files=exclude_binary_files,
-                    traversal_workers=parallel_workers,
+        cached_paths: list[Path] | None = None
+        if cache is not None and cache_key is not None and root_fingerprint is not None:
+            try:
+                cached_paths = cache.get(key=cache_key, root_fingerprint=root_fingerprint)
+            except OSError:
+                logger.debug("Cache read failed; continuing without cache", exc_info=True)
+                cached_paths = None
+
+        results: list[FileResult]
+        if cached_paths is not None:
+            logger.debug("Cache hit for query execution")
+            results = []
+            for path in cached_paths:
+                try:
+                    results.append(FileResult.from_path(path))
+                except OSError:
+                    logger.debug("Cache entry had inaccessible path; falling back to live search")
+                    cached_paths = None
+                    break
+        else:
+            logger.debug("Cache miss for query execution")
+
+        if cached_paths is None:
+            logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
+            with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
+                logger.debug(f"Sending query to LLM: {args.query}")
+                raw_response = client.extract_filters(args.query)
+                logger.debug(
+                    f"Received LLM response: {raw_response[:200]}..."
+                    if len(raw_response) > 200
+                    else f"Received LLM response: {raw_response}"
                 )
-            )
-            results = [FileResult.from_path(p) for p in paths]
+                filters = parse_llm_response(raw_response)
+                paths = list(
+                    walk_and_filter(
+                        root_path,
+                        filters,
+                        max_results=max_results,
+                        respect_ignore_files=respect_ignore_files,
+                        follow_symlinks=follow_symlinks,
+                        exclude_binary_files=exclude_binary_files,
+                        traversal_workers=parallel_workers,
+                    )
+                )
+                results = [FileResult.from_path(p) for p in paths]
 
-            if not results:
-                return 1
+                # Optional LLM re-ranking for semantic relevance
+                if not args.no_rerank and len(results) > 1:
+                    from askfind.search.reranker import rerank_results
+                    results = rerank_results(client, args.query, results)
 
-            # Optional LLM re-ranking for semantic relevance
-            if not args.no_rerank and len(results) > 1:
-                from askfind.search.reranker import rerank_results
-                results = rerank_results(client, args.query, results)
+            if cache is not None and cache_key is not None and root_fingerprint is not None:
+                try:
+                    cache.set(
+                        key=cache_key,
+                        root_fingerprint=root_fingerprint,
+                        paths=[r.path for r in results],
+                    )
+                except OSError:
+                    logger.debug("Cache write failed; continuing without cache", exc_info=True)
 
-            if args.json_output:
-                print(format_json(results))
-            elif args.verbose:
-                print(format_verbose(results))
-            else:
-                print(format_plain(results))
-            return 0
+        if not results:
+            return 1
+
+        if args.json_output:
+            print(format_json(results))
+        elif args.verbose:
+            print(format_verbose(results))
+        else:
+            print(format_plain(results))
+        return 0
     except KeyboardInterrupt:
         print("\nSearch cancelled.", file=sys.stderr)
         return 130

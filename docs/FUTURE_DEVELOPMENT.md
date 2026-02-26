@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.4** (Current) - Parallel traversal workers and performance baseline updates
+- **v0.1.5** (Current) - Search cache and repeated-query acceleration
+- **v0.1.4** - Parallel traversal workers and performance baseline updates
 - **v0.1.3** - Symlink traversal, binary exclusion, and release workflow
 - **v0.1.2** - Ignore-aware traversal UX and release prep
 - **v0.1.1** - CI hardening and quality gate improvements
@@ -18,7 +19,7 @@
 
 #### Performance Optimizations
 - [x] Parallel directory traversal using threading (`parallel_workers`, `--workers`)
-- [ ] Caching layer for repeated queries
+- [x] Caching layer for repeated queries (`cache_enabled`, `cache_ttl_seconds`, `--no-cache`)
 - [ ] Index generation for large codebases (optional)
 - [ ] Incremental search with early termination
 - [ ] Memoization of LLM responses for similar queries

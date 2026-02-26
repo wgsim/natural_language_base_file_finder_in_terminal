@@ -27,6 +27,8 @@ class Config:
     default_root: str = "."
     max_results: int = 50
     parallel_workers: int = 1
+    cache_enabled: bool = True
+    cache_ttl_seconds: int = 300
     respect_ignore_files: bool = True
     follow_symlinks: bool = False
     exclude_binary_files: bool = True
@@ -48,6 +50,8 @@ class Config:
             "default_root": search,
             "max_results": search,
             "parallel_workers": search,
+            "cache_enabled": search,
+            "cache_ttl_seconds": search,
             "respect_ignore_files": search,
             "follow_symlinks": search,
             "exclude_binary_files": search,
@@ -58,13 +62,19 @@ class Config:
             if source and field.name in source:
                 kwargs[field.name] = source[field.name]
         # Ignore malformed non-bool values and keep the safe default.
-        for bool_key in ("respect_ignore_files", "follow_symlinks", "exclude_binary_files"):
+        for bool_key in (
+            "cache_enabled",
+            "respect_ignore_files",
+            "follow_symlinks",
+            "exclude_binary_files",
+        ):
             if bool_key in kwargs and not isinstance(kwargs[bool_key], bool):
                 kwargs.pop(bool_key)
-        if "parallel_workers" in kwargs:
-            workers = kwargs["parallel_workers"]
-            if not isinstance(workers, int) or workers < 1:
-                kwargs.pop("parallel_workers")
+        for int_key in ("parallel_workers", "cache_ttl_seconds"):
+            if int_key in kwargs:
+                int_value = kwargs[int_key]
+                if not isinstance(int_value, int) or int_value < 1:
+                    kwargs.pop(int_key)
         return cls(**kwargs)
 
     def save(self, path: Path) -> None:
@@ -81,6 +91,8 @@ class Config:
                 "default_root": self.default_root,
                 "max_results": self.max_results,
                 "parallel_workers": self.parallel_workers,
+                "cache_enabled": self.cache_enabled,
+                "cache_ttl_seconds": self.cache_ttl_seconds,
                 "respect_ignore_files": self.respect_ignore_files,
                 "follow_symlinks": self.follow_symlinks,
                 "exclude_binary_files": self.exclude_binary_files,
