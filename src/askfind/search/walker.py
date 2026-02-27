@@ -50,6 +50,20 @@ class _ScanOutcome:
     recurse_dirs: tuple[tuple[Path, int, list[_IgnoreRule] | None], ...]
 
 
+@dataclass
+class _SearchBudget:
+    remaining: int | None
+
+    def exhausted(self) -> bool:
+        return self.remaining == 0
+
+    def consume_match(self) -> None:
+        if self.remaining is None:
+            return
+        if self.remaining > 0:
+            self.remaining -= 1
+
+
 def _load_ignore_rules(base_dir: Path) -> list[_IgnoreRule]:
     rules: list[_IgnoreRule] = []
     for ignore_name in IGNORE_FILES:
@@ -155,6 +169,7 @@ def walk_and_filter(
         visited_dirs.add(root_key)
 
     workers = max(1, traversal_workers)
+    budget = _SearchBudget(remaining=max_results if max_results > 0 else None)
     scanner: Generator[Path, None, None]
     if workers > 1:
         scanner = _scan_parallel(
@@ -165,6 +180,7 @@ def walk_and_filter(
             exclude_binary_files=exclude_binary_files,
             visited_dirs=visited_dirs,
             workers=workers,
+            budget=budget,
         )
     else:
         scanner = _scan_recursive(
@@ -176,15 +192,12 @@ def walk_and_filter(
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
             visited_dirs=visited_dirs,
+            budget=budget,
         )
 
-    count = 0
     try:
         for path in scanner:
             yield path
-            count += 1
-            if max_results and count >= max_results:
-                return
     finally:
         scanner.close()
 
@@ -198,7 +211,11 @@ def _scan_directory(
     ignore_rules: list[_IgnoreRule] | None,
     follow_symlinks: bool,
     exclude_binary_files: bool,
+    remaining_matches: int | None,
 ) -> _ScanOutcome:
+    if remaining_matches == 0:
+        return _ScanOutcome(matches=(), recurse_dirs=())
+
     try:
         entries = os.scandir(directory)
     except PermissionError:
@@ -281,12 +298,16 @@ def _scan_directory(
                     ):
                         continue
                     matched_paths.append(entry_path)
+                    if remaining_matches is not None and len(matched_paths) >= remaining_matches:
+                        break
                 else:
                     # Directory - skip yielding but recurse
                     schedule_recursion(is_dir, entry_path, depth)
             else:
                 # No content filter - yield everything that passed
                 matched_paths.append(entry_path)
+                if remaining_matches is not None and len(matched_paths) >= remaining_matches:
+                    break
                 schedule_recursion(is_dir, entry_path, depth)
 
     return _ScanOutcome(
@@ -304,7 +325,11 @@ def _scan_recursive(
     follow_symlinks: bool,
     exclude_binary_files: bool,
     visited_dirs: set[tuple[int, int]],
+    budget: _SearchBudget,
 ) -> Generator[Path, None, None]:
+    if budget.exhausted():
+        return
+
     outcome = _scan_directory(
         root=root,
         directory=directory,
@@ -313,11 +338,19 @@ def _scan_recursive(
         ignore_rules=ignore_rules,
         follow_symlinks=follow_symlinks,
         exclude_binary_files=exclude_binary_files,
+        remaining_matches=budget.remaining,
     )
     for path in outcome.matches:
+        if budget.exhausted():
+            return
         yield path
+        budget.consume_match()
+        if budget.exhausted():
+            return
 
     for dir_path, next_depth, next_ignore_rules in outcome.recurse_dirs:
+        if budget.exhausted():
+            return
         if follow_symlinks:
             dir_key = _directory_visit_key(dir_path, follow_symlinks=True)
             if dir_key is None:
@@ -334,6 +367,7 @@ def _scan_recursive(
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
             visited_dirs=visited_dirs,
+            budget=budget,
         )
 
 
@@ -346,6 +380,7 @@ def _scan_parallel(
     exclude_binary_files: bool,
     visited_dirs: set[tuple[int, int]],
     workers: int,
+    budget: _SearchBudget,
 ) -> Generator[Path, None, None]:
     pending: dict[Future[_ScanOutcome], None] = {}
     executor = ThreadPoolExecutor(max_workers=workers)
@@ -359,18 +394,28 @@ def _scan_parallel(
             ignore_rules=ignore_rules,
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
+            remaining_matches=budget.remaining,
         )
         pending[root_future] = None
 
-        while pending:
+        while pending and not budget.exhausted():
             done, _ = wait(tuple(pending.keys()), return_when=FIRST_COMPLETED)
             for future in done:
+                if budget.exhausted():
+                    break
                 pending.pop(future, None)
                 outcome = future.result()
                 for path in outcome.matches:
+                    if budget.exhausted():
+                        break
                     yield path
+                    budget.consume_match()
+                if budget.exhausted():
+                    break
 
                 for dir_path, next_depth, next_ignore_rules in outcome.recurse_dirs:
+                    if budget.exhausted():
+                        break
                     if follow_symlinks:
                         dir_key = _directory_visit_key(dir_path, follow_symlinks=True)
                         if dir_key is None:
@@ -388,6 +433,7 @@ def _scan_parallel(
                         ignore_rules=next_ignore_rules,
                         follow_symlinks=follow_symlinks,
                         exclude_binary_files=exclude_binary_files,
+                        remaining_matches=budget.remaining,
                     )
                     pending[next_future] = None
     finally:

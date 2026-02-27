@@ -71,6 +71,26 @@ class _ScandirWithStatFault:
                 yield entry
 
 
+class _CountingScandir:
+    """scandir context manager proxy that counts consumed entries."""
+
+    def __init__(self, entries, *, counter: dict[str, int]) -> None:
+        self._entries = entries
+        self._counter = counter
+
+    def __enter__(self):
+        self._entries.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:
+        return self._entries.__exit__(exc_type, exc, tb)
+
+    def __iter__(self):
+        for entry in self._entries:
+            self._counter["seen"] += 1
+            yield entry
+
+
 class TestWalkAndFilter:
     def test_no_filters_returns_all_files(self, tmp_path):
         _make_tree(tmp_path)
@@ -477,3 +497,57 @@ class TestWalkAndFilter:
         )
 
         assert len(results) == 2
+
+    def test_max_results_stops_scandir_iteration_early_sequential(self, tmp_path, monkeypatch):
+        for idx in range(10):
+            (tmp_path / f"file_{idx}.txt").write_text("text")
+
+        counter = {"seen": 0}
+        orig_scandir = walker.os.scandir
+
+        def counting_scandir(path):
+            entries = orig_scandir(path)
+            if Path(path).resolve() == tmp_path.resolve():
+                return _CountingScandir(entries, counter=counter)
+            return entries
+
+        monkeypatch.setattr(walker.os, "scandir", counting_scandir)
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file"),
+                max_results=1,
+                traversal_workers=1,
+            )
+        )
+
+        assert len(results) == 1
+        assert counter["seen"] == 1
+
+    def test_max_results_stops_scandir_iteration_early_parallel(self, tmp_path, monkeypatch):
+        for idx in range(10):
+            (tmp_path / f"file_{idx}.txt").write_text("text")
+
+        counter = {"seen": 0}
+        orig_scandir = walker.os.scandir
+
+        def counting_scandir(path):
+            entries = orig_scandir(path)
+            if Path(path).resolve() == tmp_path.resolve():
+                return _CountingScandir(entries, counter=counter)
+            return entries
+
+        monkeypatch.setattr(walker.os, "scandir", counting_scandir)
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file"),
+                max_results=1,
+                traversal_workers=4,
+            )
+        )
+
+        assert len(results) == 1
+        assert counter["seen"] == 1

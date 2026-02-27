@@ -24,7 +24,7 @@
 - [x] Parallel directory traversal using threading (`parallel_workers`, `--workers`)
 - [x] Caching layer for repeated queries (`cache_enabled`, `cache_ttl_seconds`, `--no-cache`)
 - [x] Index generation for large codebases (optional `askfind index ...`)
-- [ ] Incremental search with early termination
+- [x] Incremental search with early termination
 - [x] Memoization of LLM responses for similar queries
 
 #### Search Enhancements
