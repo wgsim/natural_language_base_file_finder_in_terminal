@@ -41,6 +41,12 @@ def test_build_index_and_status_roundtrip(tmp_path, monkeypatch):
     assert payload["version"] == index.INDEX_VERSION
     assert payload["root"] == str(root)
     assert payload["root_fingerprint"] == result.root_fingerprint
+    assert payload["options"] == {
+        "respect_ignore_files": True,
+        "follow_symlinks": False,
+        "exclude_binary_files": True,
+        "traversal_workers": 1,
+    }
     assert payload["paths"] == sorted([str(root / "a.py"), str(root / "b.txt")])
 
     status = index.get_index_status(root=root)
@@ -183,3 +189,217 @@ def test_read_payload_accepts_valid_payload(tmp_path):
     assert payload is not None
     assert payload.root_fingerprint == "fp"
     assert payload.paths == ("a.py", "b.py")
+
+
+def test_query_index_returns_matches_when_index_is_usable(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    py_file = root / "a.py"
+    txt_file = root / "b.txt"
+    py_file.write_text("print('a')\n")
+    txt_file.write_text("hello\n")
+    options = _options()
+    index.build_index(root=root, options=options)
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file", ext=[".py"]),
+        max_results=0,
+        options=options,
+    )
+
+    assert results == [py_file]
+
+
+def test_query_index_returns_none_when_options_do_not_match(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("print('a')\n")
+    index.build_index(root=root, options=_options())
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file", ext=[".py"]),
+        max_results=0,
+        options=_options(follow_symlinks=True),
+    )
+
+    assert results is None
+
+
+def test_query_index_returns_none_when_index_is_stale(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("print('a')\n")
+    options = _options()
+    index.build_index(root=root, options=options)
+    (root / "b.py").write_text("print('b')\n")
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file", ext=[".py"]),
+        max_results=0,
+        options=options,
+    )
+
+    assert results is None
+
+
+def test_query_index_returns_none_for_corrupt_payload(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    index_path = index._index_path_for_root(root)
+    index_path.parent.mkdir(parents=True, exist_ok=True)
+    index_path.write_text("{not-json", encoding="utf-8")
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file", ext=[".py"]),
+        max_results=0,
+        options=_options(),
+    )
+
+    assert results is None
+
+
+def test_query_index_returns_none_for_non_searchfilters(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+
+    results = index.query_index(
+        root=root,
+        filters={},  # type: ignore[arg-type]
+        max_results=0,
+        options=_options(),
+    )
+
+    assert results is None
+
+
+def test_query_index_returns_none_for_non_file_type(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("print('a')\n")
+    opts = _options()
+    index.build_index(root=root, options=opts)
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="dir"),
+        max_results=0,
+        options=opts,
+    )
+
+    assert results is None
+
+
+def test_query_index_respects_max_results(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("print('a')\n")
+    (root / "b.py").write_text("print('b')\n")
+    opts = _options()
+    index.build_index(root=root, options=opts)
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file", ext=[".py"]),
+        max_results=1,
+        options=opts,
+    )
+
+    assert results is not None
+    assert len(results) == 1
+
+
+def test_matches_indexed_path_filter_rejections(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    path = root / "a.py"
+    path.write_text("print('a')\n")
+
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=index.SearchFilters(type="dir"),
+        follow_symlinks=False,
+    ) is False
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=index.SearchFilters(type="file", depth=">0"),
+        follow_symlinks=False,
+    ) is False
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=index.SearchFilters(type="file", path="missing-subpath"),
+        follow_symlinks=False,
+    ) is False
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=index.SearchFilters(type="file", size=">10GB"),
+        follow_symlinks=False,
+    ) is False
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=index.SearchFilters(type="file", has=["not-found-token"]),
+        follow_symlinks=False,
+    ) is False
+
+
+def test_matches_indexed_path_outside_root_returns_false(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    outside = tmp_path / "outside.py"
+    outside.write_text("print('x')\n")
+
+    assert index._matches_indexed_path(
+        root=root,
+        path=outside,
+        filters=index.SearchFilters(type="file"),
+        follow_symlinks=False,
+    ) is False
+
+
+@pytest.mark.parametrize(
+    "raw_options",
+    [
+        [],
+        {"follow_symlinks": False, "exclude_binary_files": True, "traversal_workers": 1},
+        {
+            "respect_ignore_files": "yes",
+            "follow_symlinks": False,
+            "exclude_binary_files": True,
+            "traversal_workers": 1,
+        },
+        {
+            "respect_ignore_files": True,
+            "follow_symlinks": "no",
+            "exclude_binary_files": True,
+            "traversal_workers": 1,
+        },
+        {
+            "respect_ignore_files": True,
+            "follow_symlinks": False,
+            "exclude_binary_files": "no",
+            "traversal_workers": 1,
+        },
+        {
+            "respect_ignore_files": True,
+            "follow_symlinks": False,
+            "exclude_binary_files": True,
+            "traversal_workers": True,
+        },
+    ],
+)
+def test_parse_options_rejects_invalid_shapes(raw_options):
+    assert index._parse_options(raw_options) is None

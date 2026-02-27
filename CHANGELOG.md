@@ -2,6 +2,20 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.8] - 2026-02-27
+
+### Added
+- Added runtime index query integration:
+  - search execution now attempts `query_index(...)` first when an index is present, fresh, and option-compatible.
+  - automatic fallback to filesystem traversal when index is unavailable/unusable.
+- Added persistent disk cache for `LLMClient.extract_filters`:
+  - file: `~/.cache/askfind/extract_filters_cache.json`
+  - TTL, max-entry pruning, and fail-open error handling.
+- Added tests for runtime index query/fallback paths and disk-cache edge cases.
+
+### Changed
+- Updated package version metadata to `0.1.8`.
+
 ## [0.1.7] - 2026-02-27
 
 ### Added

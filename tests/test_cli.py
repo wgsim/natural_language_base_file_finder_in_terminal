@@ -5,6 +5,8 @@ import types
 import httpx
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from askfind.cli import _validate_base_url, build_parser, main
 
 
@@ -34,6 +36,11 @@ def _setup_mock_llm_client(mock_llm_cls, raw_response='{"ext": [".py"]}', extrac
     mock_client.__exit__ = MagicMock(return_value=None)
     mock_llm_cls.return_value = mock_client
     return mock_client
+
+
+@pytest.fixture(autouse=True)
+def _default_query_index_fallback(monkeypatch):
+    monkeypatch.setattr("askfind.cli.query_index", lambda **kwargs: None, raising=False)
 
 
 class TestBuildParser:
@@ -759,6 +766,66 @@ class TestMainAdditionalBranches:
         mock_parse.assert_not_called()
         mock_walk.assert_not_called()
         cache.get.assert_called_once_with(key="cache-key", root_fingerprint="root-fp")
+
+    @patch("askfind.cli.query_index")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_index_hit_skips_walker(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_query_index,
+        tmp_path,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_query_index.return_value = [file_a]
+
+        result = main(["query", "--root", str(tmp_path)])
+
+        assert result == 0
+        mock_query_index.assert_called_once()
+        mock_walk.assert_not_called()
+
+    @patch("askfind.cli.query_index", return_value=None)
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_index_miss_falls_back_to_walker(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_query_index,
+        tmp_path,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_walk.return_value = [file_a]
+
+        result = main(["query", "--root", str(tmp_path)])
+
+        assert result == 0
+        mock_query_index.assert_called_once()
+        mock_walk.assert_called_once()
 
     @patch("askfind.cli.compute_root_fingerprint", return_value="root-fp")
     @patch("askfind.cli.build_search_cache_key", return_value="cache-key")

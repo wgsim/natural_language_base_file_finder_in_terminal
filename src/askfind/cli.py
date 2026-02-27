@@ -22,6 +22,7 @@ from askfind.search.index import (
     build_index,
     clear_index,
     get_index_status,
+    query_index,
     update_index,
 )
 
@@ -561,17 +562,34 @@ def main(argv: list[str] | None = None) -> int:
                     else f"Received LLM response: {raw_response}"
                 )
                 filters = parse_llm_response(raw_response)
-                paths = list(
-                    walk_and_filter(
-                        root_path,
-                        filters,
-                        max_results=max_results,
-                        respect_ignore_files=respect_ignore_files,
-                        follow_symlinks=follow_symlinks,
-                        exclude_binary_files=exclude_binary_files,
-                        traversal_workers=parallel_workers,
-                    )
+                index_options = IndexOptions(
+                    respect_ignore_files=respect_ignore_files,
+                    follow_symlinks=follow_symlinks,
+                    exclude_binary_files=exclude_binary_files,
+                    traversal_workers=parallel_workers,
                 )
+                indexed_paths = query_index(
+                    root=root_path,
+                    filters=filters,
+                    max_results=max_results,
+                    options=index_options,
+                )
+                if indexed_paths is None:
+                    logger.debug("Index query miss/unusable; falling back to filesystem walk")
+                    paths = list(
+                        walk_and_filter(
+                            root_path,
+                            filters,
+                            max_results=max_results,
+                            respect_ignore_files=respect_ignore_files,
+                            follow_symlinks=follow_symlinks,
+                            exclude_binary_files=exclude_binary_files,
+                            traversal_workers=parallel_workers,
+                        )
+                    )
+                else:
+                    logger.debug("Index query hit; using indexed paths")
+                    paths = indexed_paths
                 results = [FileResult.from_path(p) for p in paths]
 
                 # Optional LLM re-ranking for semantic relevance
