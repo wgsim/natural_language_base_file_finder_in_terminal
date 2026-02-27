@@ -287,6 +287,8 @@ conda run -n askfind_env pytest tests/ --cov=askfind --cov-report=html
 CI enforces a minimum coverage gate of 95%.
 CI also runs a traversal performance regression gate via
 `scripts/ci/benchmark_regression_gate.py`.
+CI additionally validates index-query performance parity via
+`scripts/ci/index_query_regression_gate.py`.
 
 ### Benchmark Traversal
 
@@ -296,6 +298,12 @@ PYTHONPATH=src python scripts/bench/benchmark_walk.py --root . --repeats 5 --wor
 
 # CI-style performance regression check (parallel vs sequential median ratio)
 PYTHONPATH=src python scripts/ci/benchmark_regression_gate.py --root .
+
+# CI-style index-query regression check (index-query vs walk median ratio)
+PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root .
+
+# Optional: use a local index directory for sandboxed/dev runs
+PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root . --index-dir /tmp/askfind-indexes
 ```
 
 ### Git Hooks
