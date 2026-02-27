@@ -688,6 +688,7 @@ class TestMainAdditionalBranches:
 
         assert result == 1
         assert "cache: disabled" in captured.err
+        assert "index: hits=0 fallbacks=1" in captured.err
 
     @patch("askfind.cli.compute_root_fingerprint", return_value="root-fp")
     @patch("askfind.cli.build_search_cache_key", return_value="cache-key")
@@ -728,6 +729,78 @@ class TestMainAdditionalBranches:
 
         assert result == 0
         assert "cache: hits=0 misses=1 sets=1" in captured.err
+        assert "index: hits=0 fallbacks=1" in captured.err
+
+    @patch("askfind.cli.query_index")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_cache_stats_prints_index_hit(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_query_index,
+        tmp_path,
+        capsys,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_query_index.return_value = [file_a]
+
+        result = main(["query", "--cache-stats", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "index: hits=1 fallbacks=0 reasons=none" in captured.err
+        mock_walk.assert_not_called()
+
+    @patch("askfind.cli.query_index")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_cache_stats_prints_index_fallback_reason(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        mock_query_index,
+        tmp_path,
+        capsys,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+        mock_walk.return_value = [file_a]
+
+        def fake_query_index(**kwargs):
+            diagnostics = kwargs.get("diagnostics")
+            if diagnostics is not None:
+                diagnostics.fallback_reason = "stale_index"
+            return None
+
+        mock_query_index.side_effect = fake_query_index
+
+        result = main(["query", "--cache-stats", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "index: hits=0 fallbacks=1 reasons=stale_index:1" in captured.err
 
     @patch("askfind.cli.compute_root_fingerprint", return_value="root-fp")
     @patch("askfind.cli.build_search_cache_key", return_value="cache-key")

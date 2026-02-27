@@ -212,6 +212,28 @@ def test_query_index_returns_matches_when_index_is_usable(tmp_path, monkeypatch)
     assert results == [py_file]
 
 
+def test_query_index_populates_diagnostics_on_success(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    py_file = root / "a.py"
+    py_file.write_text("print('a')\n")
+    options = _options()
+    index.build_index(root=root, options=options)
+    diagnostics = index.IndexQueryDiagnostics()
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file", ext=[".py"]),
+        max_results=0,
+        options=options,
+        diagnostics=diagnostics,
+    )
+
+    assert results == [py_file]
+    assert diagnostics.fallback_reason is None
+
+
 def test_query_index_returns_none_when_options_do_not_match(tmp_path, monkeypatch):
     monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
     root = tmp_path / "repo"
@@ -219,14 +241,17 @@ def test_query_index_returns_none_when_options_do_not_match(tmp_path, monkeypatc
     (root / "a.py").write_text("print('a')\n")
     index.build_index(root=root, options=_options())
 
+    diagnostics = index.IndexQueryDiagnostics()
     results = index.query_index(
         root=root,
         filters=index.SearchFilters(type="file", ext=[".py"]),
         max_results=0,
         options=_options(follow_symlinks=True),
+        diagnostics=diagnostics,
     )
 
     assert results is None
+    assert diagnostics.fallback_reason == "options_mismatch"
 
 
 def test_query_index_returns_none_when_index_is_stale(tmp_path, monkeypatch):
@@ -238,14 +263,17 @@ def test_query_index_returns_none_when_index_is_stale(tmp_path, monkeypatch):
     index.build_index(root=root, options=options)
     (root / "b.py").write_text("print('b')\n")
 
+    diagnostics = index.IndexQueryDiagnostics()
     results = index.query_index(
         root=root,
         filters=index.SearchFilters(type="file", ext=[".py"]),
         max_results=0,
         options=options,
+        diagnostics=diagnostics,
     )
 
     assert results is None
+    assert diagnostics.fallback_reason == "stale_index"
 
 
 def test_query_index_returns_none_for_corrupt_payload(tmp_path, monkeypatch):
@@ -256,28 +284,34 @@ def test_query_index_returns_none_for_corrupt_payload(tmp_path, monkeypatch):
     index_path.parent.mkdir(parents=True, exist_ok=True)
     index_path.write_text("{not-json", encoding="utf-8")
 
+    diagnostics = index.IndexQueryDiagnostics()
     results = index.query_index(
         root=root,
         filters=index.SearchFilters(type="file", ext=[".py"]),
         max_results=0,
         options=_options(),
+        diagnostics=diagnostics,
     )
 
     assert results is None
+    assert diagnostics.fallback_reason == "missing_or_invalid_index"
 
 
 def test_query_index_returns_none_for_non_searchfilters(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
+    diagnostics = index.IndexQueryDiagnostics()
 
     results = index.query_index(
         root=root,
         filters={},  # type: ignore[arg-type]
         max_results=0,
         options=_options(),
+        diagnostics=diagnostics,
     )
 
     assert results is None
+    assert diagnostics.fallback_reason == "invalid_filters"
 
 
 def test_query_index_returns_none_for_non_file_type(tmp_path, monkeypatch):
@@ -288,14 +322,17 @@ def test_query_index_returns_none_for_non_file_type(tmp_path, monkeypatch):
     opts = _options()
     index.build_index(root=root, options=opts)
 
+    diagnostics = index.IndexQueryDiagnostics()
     results = index.query_index(
         root=root,
         filters=index.SearchFilters(type="dir"),
         max_results=0,
         options=opts,
+        diagnostics=diagnostics,
     )
 
     assert results is None
+    assert diagnostics.fallback_reason == "unsupported_filters"
 
 
 def test_query_index_respects_max_results(tmp_path, monkeypatch):

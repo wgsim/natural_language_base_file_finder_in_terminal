@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.9] - 2026-02-27
+
+### Added
+- Added index query runtime observability in CLI `--cache-stats` output:
+  - index query hit/fallback counters
+  - fallback reason counters (for index-unusable paths)
+- Added index query regression gate:
+  - new script `scripts/ci/index_query_regression_gate.py`
+  - new CI step in `.github/workflows/ci.yml`
+
+### Changed
+- Implemented incremental early termination in walker:
+  - traversal now propagates a shared match budget for `max_results`
+  - sequential and parallel scan paths stop scanning/scheduling earlier once budget is exhausted
+- Expanded lint gates to include `scripts/` in CI and local hooks.
+- Updated package version metadata to `0.1.9`.
+
 ## [0.1.8] - 2026-02-27
 
 ### Added

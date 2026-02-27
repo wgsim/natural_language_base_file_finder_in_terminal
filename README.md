@@ -12,7 +12,7 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 🙈 **Ignore-Aware Traversal** - Respects `.gitignore` and `.askfindignore` by default
 - 🔗 **Safe Symlink Traversal** - Optional `--follow-symlinks` follows links only inside search root
 - 🧪 **Binary File Exclusion** - Binary files are excluded by default (override with `--include-binary`)
-- 💾 **Search Cache** - Reuses recent query results (disable per run with `--no-cache`, inspect with `--cache-stats`)
+- 💾 **Search Cache** - Reuses recent query results (disable per run with `--no-cache`, inspect cache/index runtime counters with `--cache-stats`)
 - 🗂️ **Index Management** - Build/update/status/clear optional per-root file indexes
 - 🧠 **LLM Filter Memoization** - Reuses repeated filter-extraction calls (in-memory + disk cache)
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
@@ -73,7 +73,7 @@ askfind "python files" --no-rerank
 # Disable cache for one command
 askfind "python files" --no-cache
 
-# Print cache counters for the command
+# Print cache/index counters for the command
 askfind "python files" --cache-stats
 
 # Optional index lifecycle commands
@@ -147,7 +147,7 @@ askfind config models
    By default, traversal respects root `.gitignore` and `.askfindignore`. Use `--no-ignore` to disable this behavior.
    Binary files are excluded by default to reduce noisy results. Use `--include-binary` when needed.
    Symlinks are not followed unless `--follow-symlinks` is set.
-   Search results are cached by default. Use `--no-cache` to bypass cache for one command, or `--cache-stats` to print hit/miss/set counters.
+   Search results are cached by default. Use `--no-cache` to bypass cache for one command, or `--cache-stats` to print cache hit/miss/set counters and index hit/fallback reasons.
 
 3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance
 
@@ -318,7 +318,7 @@ git config core.hooksPath .githooks
 After setup, both `pre-commit` and `pre-push` run lint+tests using:
 
 ```bash
-conda run -n askfind_env sh -lc 'python scripts/ci/check_dev_tool_pins.py && ruff check src tests && PYTHONPATH=src pytest -q'
+conda run -n askfind_env sh -lc 'python scripts/ci/check_dev_tool_pins.py && ruff check src tests scripts && PYTHONPATH=src pytest -q'
 ```
 
 If `askfind_env` is not available, hooks fall back to `./pytest_env/bin/ruff` and

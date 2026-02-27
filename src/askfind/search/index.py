@@ -65,6 +65,13 @@ class _StoredIndexPayload:
     options: IndexOptions | None
 
 
+@dataclass
+class IndexQueryDiagnostics:
+    """Diagnostics emitted for index query fallback paths."""
+
+    fallback_reason: str | None = None
+
+
 def build_index(*, root: Path, options: IndexOptions) -> IndexBuildResult:
     """Build a new index for root and overwrite any existing one."""
     _assert_root_is_directory(root)
@@ -122,33 +129,42 @@ def query_index(
     filters: SearchFilters,
     max_results: int,
     options: IndexOptions,
+    diagnostics: IndexQueryDiagnostics | None = None,
 ) -> list[Path] | None:
     """Query an existing index.
 
     Returns a list of matched paths when the index is usable, otherwise None.
     None means callers should fall back to live filesystem traversal.
     """
+    if diagnostics is not None:
+        diagnostics.fallback_reason = None
     if not isinstance(filters, SearchFilters):
+        _set_fallback_reason(diagnostics, "invalid_filters")
         return None
     if not _supports_index_query(filters):
+        _set_fallback_reason(diagnostics, "unsupported_filters")
         return None
 
     index_path = _index_path_for_root(root)
     payload = _read_payload(index_path=index_path)
     if payload is None:
+        _set_fallback_reason(diagnostics, "missing_or_invalid_index")
         return None
 
     normalized_options = _normalize_options(options)
     if payload.options is None or payload.options != normalized_options:
+        _set_fallback_reason(diagnostics, "options_mismatch")
         return None
 
     current_root_fingerprint = compute_root_fingerprint(root)
     if payload.root_fingerprint != current_root_fingerprint:
+        _set_fallback_reason(diagnostics, "stale_index")
         return None
 
     try:
         resolved_root = root.resolve(strict=False)
     except OSError:
+        _set_fallback_reason(diagnostics, "root_resolve_failed")
         return None
 
     matches: list[Path] = []
@@ -164,6 +180,14 @@ def query_index(
             if max_results and len(matches) >= max_results:
                 break
     return matches
+
+
+def _set_fallback_reason(
+    diagnostics: IndexQueryDiagnostics | None,
+    reason: str,
+) -> None:
+    if diagnostics is not None:
+        diagnostics.fallback_reason = reason
 
 
 def clear_index(*, root: Path) -> IndexClearResult:
