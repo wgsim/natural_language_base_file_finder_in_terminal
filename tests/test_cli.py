@@ -930,6 +930,142 @@ class TestMainAdditionalBranches:
         mock_format_plain.assert_not_called()
 
 
+class TestIndexSubcommand:
+    @patch("askfind.cli.build_index")
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key")
+    def test_index_build_uses_config_root_and_prints_summary(
+        self, mock_get_key, mock_config_cls, mock_build_index, tmp_path, capsys
+    ):
+        default_root = tmp_path / "default-root"
+        default_root.mkdir()
+
+        mock_config = _make_mock_config(default_root=default_root)
+        mock_config.parallel_workers = 3
+        mock_config_cls.return_value = mock_config
+        mock_build_index.return_value = types.SimpleNamespace(
+            root=default_root.resolve(),
+            file_count=12,
+        )
+
+        result = main(["index", "build"])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "Index built for" in captured.out
+        assert "files=12" in captured.out
+        mock_get_key.assert_not_called()
+
+        kwargs = mock_build_index.call_args.kwargs
+        assert kwargs["root"] == default_root.resolve()
+        assert kwargs["options"].respect_ignore_files is True
+        assert kwargs["options"].follow_symlinks is False
+        assert kwargs["options"].exclude_binary_files is True
+        assert kwargs["options"].traversal_workers == 3
+
+    @patch("askfind.cli.build_index")
+    @patch("askfind.cli.Config.from_file")
+    def test_index_build_respects_traversal_flags(
+        self, mock_config_cls, mock_build_index, tmp_path
+    ):
+        explicit_root = tmp_path / "explicit-root"
+        explicit_root.mkdir()
+
+        mock_config = _make_mock_config(default_root=tmp_path / "ignored-default")
+        mock_config.respect_ignore_files = True
+        mock_config.follow_symlinks = False
+        mock_config.exclude_binary_files = True
+        mock_config.parallel_workers = 2
+        mock_config_cls.return_value = mock_config
+        mock_build_index.return_value = types.SimpleNamespace(
+            root=explicit_root.resolve(),
+            file_count=3,
+        )
+
+        result = main(
+            [
+                "index",
+                "build",
+                "--root",
+                str(explicit_root),
+                "--workers",
+                "8",
+                "--no-ignore",
+                "--follow-symlinks",
+                "--include-binary",
+            ]
+        )
+
+        assert result == 0
+        kwargs = mock_build_index.call_args.kwargs
+        assert kwargs["root"] == explicit_root.resolve()
+        assert kwargs["options"].respect_ignore_files is False
+        assert kwargs["options"].follow_symlinks is True
+        assert kwargs["options"].exclude_binary_files is False
+        assert kwargs["options"].traversal_workers == 8
+
+    @patch("askfind.cli.Config.from_file")
+    def test_index_build_negative_workers_returns_2(self, mock_config_cls):
+        mock_config_cls.return_value = _make_mock_config()
+
+        result = main(["index", "build", "--workers", "-1"])
+
+        assert result == 2
+
+    @patch("askfind.cli.update_index")
+    @patch("askfind.cli.Config.from_file")
+    def test_index_update_calls_update_handler(self, mock_config_cls, mock_update_index, tmp_path):
+        root = tmp_path / "root"
+        root.mkdir()
+        mock_config_cls.return_value = _make_mock_config(default_root=root)
+        mock_update_index.return_value = types.SimpleNamespace(root=root.resolve(), file_count=7)
+
+        result = main(["index", "update", "--root", str(root)])
+
+        assert result == 0
+        mock_update_index.assert_called_once()
+
+    @patch("askfind.cli.get_index_status")
+    @patch("askfind.cli.Config.from_file")
+    def test_index_status_prints_exists_files_and_stale(
+        self, mock_config_cls, mock_get_status, tmp_path, capsys
+    ):
+        root = tmp_path / "root"
+        root.mkdir()
+        mock_config_cls.return_value = _make_mock_config(default_root=root)
+        mock_get_status.return_value = types.SimpleNamespace(
+            root=root.resolve(),
+            exists=True,
+            file_count=5,
+            stale=False,
+        )
+
+        result = main(["index", "status", "--root", str(root)])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "exists=yes" in captured.out
+        assert "files=5" in captured.out
+        assert "stale=no" in captured.out
+
+    @patch("askfind.cli.clear_index")
+    @patch("askfind.cli.Config.from_file")
+    def test_index_clear_reports_missing_index(self, mock_config_cls, mock_clear_index, tmp_path, capsys):
+        root = tmp_path / "root"
+        root.mkdir()
+        mock_config_cls.return_value = _make_mock_config(default_root=root)
+        mock_clear_index.return_value = types.SimpleNamespace(
+            root=root.resolve(),
+            cleared=False,
+        )
+
+        result = main(["index", "clear", "--root", str(root)])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "No index found for" in captured.out
+
+
 class TestMainExceptionHandling:
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")
