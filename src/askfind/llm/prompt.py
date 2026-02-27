@@ -15,6 +15,8 @@ FILTER_SCHEMA = """\
   "regex": "pattern",    // regex on filename
   "fuzzy": "confg",      // fuzzy match on filename
   "mod": ">7d",          // modified within (d=days, h=hours, m=minutes, w=weeks)
+  "mod_after": "2026-01-01",   // modified on/after absolute date (YYYY-MM-DD or ISO datetime)
+  "mod_before": "2026-01-15",  // modified before absolute date boundary (YYYY-MM-DD or ISO datetime)
   "size": ">1MB",        // size (KB, MB, GB)
   "has": ["TODO"],       // file content contains all terms
   "type": "file",        // file, dir, link
@@ -40,7 +42,9 @@ Available keys:
 
 Rules:
 - Return ONLY the JSON object, no explanation, no markdown.
-- Use relative time: "7d" not "2026-01-26".
+- Use `mod` for relative time queries (e.g., "last 7 days").
+- Use `mod_after`/`mod_before` for explicit absolute dates or date ranges.
+- For "between Jan 1 and Jan 15", set both keys with `YYYY-MM-DD`.
 - For "this week" use ">7d". For "today" use ">1d". For "this month" use ">30d".
 - ext values must include the dot: ".py" not "py".
 - has accepts a list of strings that must ALL appear in the file content.

@@ -37,7 +37,7 @@
 - [ ] Archive file support (search inside .zip, .tar.gz)
 
 #### Filter Improvements
-- [ ] Date range queries ("between Jan 1 and Jan 15")
+- [x] Date range queries ("between Jan 1 and Jan 15")
 - [ ] File similarity search ("files similar to auth.py")
 - [ ] Code complexity filters (cyclomatic complexity, LOC)
 - [ ] Language detection and filtering

@@ -34,6 +34,34 @@ def parse_time_delta(s: str) -> timedelta:
     return timedelta(days=int(s))
 
 
+def parse_mod_datetime(s: str, *, upper_bound: bool = False) -> datetime:
+    """Parse absolute date/datetime filter values into UTC datetime.
+
+    Supported formats:
+    - YYYY-MM-DD
+    - YYYY-MM-DDTHH:MM[:SS][Z|+HH:MM]
+    - YYYY-MM-DD HH:MM[:SS][Z|+HH:MM]
+    """
+    raw = s.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    if " " in raw and "T" not in raw:
+        raw = raw.replace(" ", "T", 1)
+
+    dt = datetime.fromisoformat(raw)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    else:
+        dt = dt.astimezone(timezone.utc)
+
+    # Date-only values represent whole-day boundaries.
+    if len(s.strip()) == 10:
+        dt = dt.replace(hour=0, minute=0, second=0, microsecond=0)
+        if upper_bound:
+            dt += timedelta(days=1)
+    return dt
+
+
 def _parse_constraint(s: str) -> tuple[str, str]:
     """Parse '>7d' into ('>', '7d') or '<1MB' into ('<', '1MB')."""
     if s.startswith(">"):
@@ -78,6 +106,7 @@ class SearchFilters:
     - regex: Regex matching on filename
     - fuzzy: Fuzzy subsequence matching on filename
     - mod: Modification time constraints
+    - mod_after, mod_before: Absolute modification date range constraints
     - size: File size constraints
     - has: Content matching (all terms must be present)
     - type: File type (file, dir, link)
@@ -101,6 +130,8 @@ class SearchFilters:
     regex: str | None = None
     fuzzy: str | None = None
     mod: str | None = None
+    mod_after: str | None = None
+    mod_before: str | None = None
     size: str | None = None
     has: list[str] | None = None
     type: str | None = None
@@ -180,6 +211,14 @@ class SearchFilters:
         return depth == limit
 
     def matches_stat(self, stat: os.stat_result) -> bool:
+        mtime: datetime | None = None
+
+        def get_mtime() -> datetime:
+            nonlocal mtime
+            if mtime is None:
+                mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+            return mtime
+
         if self.size:
             op, val = _parse_constraint(self.size)
             try:
@@ -199,11 +238,24 @@ class SearchFilters:
                 delta = None
             if delta is not None:
                 cutoff = datetime.now(timezone.utc) - delta
-                mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
-                if op == ">" and mtime < cutoff:
+                if op == ">" and get_mtime() < cutoff:
                     return False
-                if op == "<" and mtime > cutoff:
+                if op == "<" and get_mtime() > cutoff:
                     return False
+        if self.mod_after:
+            try:
+                lower_bound = parse_mod_datetime(self.mod_after, upper_bound=False)
+            except (ValueError, OverflowError):
+                lower_bound = None
+            if lower_bound is not None and get_mtime() < lower_bound:
+                return False
+        if self.mod_before:
+            try:
+                upper_bound = parse_mod_datetime(self.mod_before, upper_bound=True)
+            except (ValueError, OverflowError):
+                upper_bound = None
+            if upper_bound is not None and get_mtime() >= upper_bound:
+                return False
         if self.perm:
             mode = stat.st_mode
             if "x" in self.perm and not (mode & 0o111):
