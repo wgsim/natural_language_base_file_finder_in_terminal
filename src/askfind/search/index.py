@@ -25,6 +25,7 @@ class IndexOptions:
     respect_ignore_files: bool
     follow_symlinks: bool
     exclude_binary_files: bool
+    search_archives: bool
     traversal_workers: int
 
 
@@ -152,6 +153,9 @@ def query_index(
         return None
 
     normalized_options = _normalize_options(options)
+    if normalized_options.search_archives:
+        _set_fallback_reason(diagnostics, "unsupported_search_archives")
+        return None
     if payload.options is None or payload.options != normalized_options:
         _set_fallback_reason(diagnostics, "options_mismatch")
         return None
@@ -206,6 +210,7 @@ def _normalize_options(options: IndexOptions) -> IndexOptions:
         respect_ignore_files=options.respect_ignore_files,
         follow_symlinks=options.follow_symlinks,
         exclude_binary_files=options.exclude_binary_files,
+        search_archives=options.search_archives,
         traversal_workers=max(1, options.traversal_workers),
     )
 
@@ -222,6 +227,7 @@ def _serialize_options(options: IndexOptions) -> dict[str, object]:
         "respect_ignore_files": options.respect_ignore_files,
         "follow_symlinks": options.follow_symlinks,
         "exclude_binary_files": options.exclude_binary_files,
+        "search_archives": options.search_archives,
         "traversal_workers": options.traversal_workers,
     }
 
@@ -286,6 +292,7 @@ def _collect_file_paths(*, root: Path, options: IndexOptions) -> list[str]:
         respect_ignore_files=options.respect_ignore_files,
         follow_symlinks=options.follow_symlinks,
         exclude_binary_files=options.exclude_binary_files,
+        search_archives=options.search_archives,
         traversal_workers=max(1, options.traversal_workers),
     )
     return sorted(str(path) for path in files)
@@ -333,12 +340,15 @@ def _parse_options(raw_options: object) -> IndexOptions | None:
     respect_ignore_files = raw_options.get("respect_ignore_files")
     follow_symlinks = raw_options.get("follow_symlinks")
     exclude_binary_files = raw_options.get("exclude_binary_files")
+    search_archives = raw_options.get("search_archives")
     traversal_workers = raw_options.get("traversal_workers")
     if not isinstance(respect_ignore_files, bool):
         return None
     if not isinstance(follow_symlinks, bool):
         return None
     if not isinstance(exclude_binary_files, bool):
+        return None
+    if not isinstance(search_archives, bool):
         return None
     if not isinstance(traversal_workers, int) or isinstance(traversal_workers, bool):
         return None
@@ -347,6 +357,7 @@ def _parse_options(raw_options: object) -> IndexOptions | None:
             respect_ignore_files=respect_ignore_files,
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
+            search_archives=search_archives,
             traversal_workers=traversal_workers,
         )
     )

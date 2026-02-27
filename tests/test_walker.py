@@ -1,6 +1,8 @@
 """Tests for filesystem walker."""
 
 from pathlib import Path
+import tarfile
+import zipfile
 
 import pytest
 import askfind.search.walker as walker
@@ -497,6 +499,53 @@ class TestWalkAndFilter:
         )
 
         assert len(results) == 2
+
+    def test_search_archives_zip_matches_inner_python_file(self, tmp_path):
+        archive = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("src/in_archive.py", "print('ok')\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", ext=[".py"]),
+                search_archives=True,
+            )
+        )
+
+        assert archive in results
+
+    def test_search_archives_tar_gz_matches_inner_path_filter(self, tmp_path):
+        archive = tmp_path / "bundle.tar.gz"
+        inner_file = tmp_path / "inner_target.txt"
+        inner_file.write_text("x")
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(inner_file, arcname="pkg/deep/target.txt")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", path="deep/target"),
+                search_archives=True,
+            )
+        )
+
+        assert archive in results
+
+    def test_search_archives_disabled_does_not_match_inner_entries(self, tmp_path):
+        archive = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("src/in_archive.py", "print('ok')\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", ext=[".py"]),
+                search_archives=False,
+            )
+        )
+
+        assert archive not in results
 
     def test_max_results_stops_scandir_iteration_early_sequential(self, tmp_path, monkeypatch):
         for idx in range(10):

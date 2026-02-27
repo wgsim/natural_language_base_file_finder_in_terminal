@@ -58,6 +58,7 @@ def test_build_search_cache_key_changes_with_options(tmp_path):
         respect_ignore_files=True,
         follow_symlinks=False,
         exclude_binary_files=True,
+        search_archives=False,
         traversal_workers=1,
     )
     key_b = build_search_cache_key(
@@ -70,7 +71,40 @@ def test_build_search_cache_key_changes_with_options(tmp_path):
         respect_ignore_files=True,
         follow_symlinks=False,
         exclude_binary_files=True,
+        search_archives=True,
         traversal_workers=8,
+    )
+
+    assert key_a != key_b
+
+
+def test_build_search_cache_key_changes_with_archive_option(tmp_path):
+    root = Path(tmp_path)
+    key_a = build_search_cache_key(
+        query="python files",
+        root=root,
+        model="m1",
+        base_url="https://api.example.com/v1",
+        max_results=10,
+        no_rerank=False,
+        respect_ignore_files=True,
+        follow_symlinks=False,
+        exclude_binary_files=True,
+        search_archives=False,
+        traversal_workers=1,
+    )
+    key_b = build_search_cache_key(
+        query="python files",
+        root=root,
+        model="m1",
+        base_url="https://api.example.com/v1",
+        max_results=10,
+        no_rerank=False,
+        respect_ignore_files=True,
+        follow_symlinks=False,
+        exclude_binary_files=True,
+        search_archives=True,
+        traversal_workers=1,
     )
 
     assert key_a != key_b

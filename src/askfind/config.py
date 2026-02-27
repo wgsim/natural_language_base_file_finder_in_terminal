@@ -32,6 +32,7 @@ class Config:
     respect_ignore_files: bool = True
     follow_symlinks: bool = False
     exclude_binary_files: bool = True
+    search_archives: bool = False
     editor: str = "vim"
 
     @classmethod
@@ -55,6 +56,7 @@ class Config:
             "respect_ignore_files": search,
             "follow_symlinks": search,
             "exclude_binary_files": search,
+            "search_archives": search,
             "editor": interactive,
         }
         for field in fields(cls):
@@ -67,6 +69,7 @@ class Config:
             "respect_ignore_files",
             "follow_symlinks",
             "exclude_binary_files",
+            "search_archives",
         ):
             if bool_key in kwargs and not isinstance(kwargs[bool_key], bool):
                 kwargs.pop(bool_key)
@@ -96,6 +99,7 @@ class Config:
                 "respect_ignore_files": self.respect_ignore_files,
                 "follow_symlinks": self.follow_symlinks,
                 "exclude_binary_files": self.exclude_binary_files,
+                "search_archives": self.search_archives,
             },
             "interactive": {
                 "editor": self.editor,

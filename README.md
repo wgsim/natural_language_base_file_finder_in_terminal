@@ -90,6 +90,9 @@ askfind "python files" --follow-symlinks
 
 # Include binary files in results
 askfind "files in build output" --include-binary
+
+# Search inside archive entries by path/name (.zip, .tar.gz)
+askfind "python files in archives" --search-archives
 ```
 
 ### Interactive Mode
@@ -147,6 +150,7 @@ askfind config models
    By default, traversal respects root `.gitignore` and `.askfindignore`. Use `--no-ignore` to disable this behavior.
    Binary files are excluded by default to reduce noisy results. Use `--include-binary` when needed.
    Symlinks are not followed unless `--follow-symlinks` is set.
+   Archive entry path/name matching is available with `--search-archives`.
    Search results are cached by default. Use `--no-cache` to bypass cache for one command, or `--cache-stats` to print cache hit/miss/set counters and index hit/fallback reasons.
 
 3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance

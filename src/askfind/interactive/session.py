@@ -118,6 +118,7 @@ class InteractiveSession:
             respect_ignore_files = getattr(self.config, "respect_ignore_files", True)
             follow_symlinks = getattr(self.config, "follow_symlinks", False)
             exclude_binary_files = getattr(self.config, "exclude_binary_files", True)
+            search_archives = getattr(self.config, "search_archives", False)
             traversal_workers = getattr(self.config, "parallel_workers", 1)
             if not isinstance(respect_ignore_files, bool):
                 respect_ignore_files = True
@@ -125,6 +126,8 @@ class InteractiveSession:
                 follow_symlinks = False
             if not isinstance(exclude_binary_files, bool):
                 exclude_binary_files = True
+            if not isinstance(search_archives, bool):
+                search_archives = False
             if not isinstance(traversal_workers, int) or traversal_workers < 1:
                 traversal_workers = 1
 
@@ -153,6 +156,7 @@ class InteractiveSession:
                     respect_ignore_files=respect_ignore_files,
                     follow_symlinks=follow_symlinks,
                     exclude_binary_files=exclude_binary_files,
+                    search_archives=search_archives,
                     traversal_workers=traversal_workers,
                 )
                 root_fingerprint = compute_root_fingerprint(self.root)
@@ -188,6 +192,7 @@ class InteractiveSession:
                         respect_ignore_files=respect_ignore_files,
                         follow_symlinks=follow_symlinks,
                         exclude_binary_files=exclude_binary_files,
+                        search_archives=search_archives,
                         traversal_workers=traversal_workers,
                     )
                 )

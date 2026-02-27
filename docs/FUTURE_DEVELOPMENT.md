@@ -34,7 +34,7 @@
 - [x] Symbolic link following options (`--follow-symlinks`, root-bounded)
 - [ ] Extended attribute filtering (macOS tags, file labels)
 - [x] Binary file detection and exclusion (default on, `--include-binary` to override)
-- [ ] Archive file support (search inside .zip, .tar.gz)
+- [x] Archive file support (stage 1: search by entry path/name inside .zip, .tar.gz)
 
 #### Filter Improvements
 - [x] Date range queries ("between Jan 1 and Jan 15")

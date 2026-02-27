@@ -14,12 +14,14 @@ def _options(
     respect_ignore_files: bool = True,
     follow_symlinks: bool = False,
     exclude_binary_files: bool = True,
+    search_archives: bool = False,
     traversal_workers: int = 1,
 ) -> index.IndexOptions:
     return index.IndexOptions(
         respect_ignore_files=respect_ignore_files,
         follow_symlinks=follow_symlinks,
         exclude_binary_files=exclude_binary_files,
+        search_archives=search_archives,
         traversal_workers=traversal_workers,
     )
 
@@ -45,6 +47,7 @@ def test_build_index_and_status_roundtrip(tmp_path, monkeypatch):
         "respect_ignore_files": True,
         "follow_symlinks": False,
         "exclude_binary_files": True,
+        "search_archives": False,
         "traversal_workers": 1,
     }
     assert payload["paths"] == sorted([str(root / "a.py"), str(root / "b.txt")])
@@ -335,6 +338,27 @@ def test_query_index_returns_none_for_non_file_type(tmp_path, monkeypatch):
     assert diagnostics.fallback_reason == "unsupported_filters"
 
 
+def test_query_index_returns_none_when_archive_scan_enabled(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("print('a')\n")
+    opts = _options()
+    index.build_index(root=root, options=opts)
+    diagnostics = index.IndexQueryDiagnostics()
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file", ext=[".py"]),
+        max_results=0,
+        options=_options(search_archives=True),
+        diagnostics=diagnostics,
+    )
+
+    assert results is None
+    assert diagnostics.fallback_reason == "unsupported_search_archives"
+
+
 def test_query_index_respects_max_results(tmp_path, monkeypatch):
     monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
     root = tmp_path / "repo"
@@ -428,12 +452,21 @@ def test_matches_indexed_path_outside_root_returns_false(tmp_path):
             "respect_ignore_files": True,
             "follow_symlinks": False,
             "exclude_binary_files": "no",
+            "search_archives": False,
             "traversal_workers": 1,
         },
         {
             "respect_ignore_files": True,
             "follow_symlinks": False,
             "exclude_binary_files": True,
+            "search_archives": "no",
+            "traversal_workers": 1,
+        },
+        {
+            "respect_ignore_files": True,
+            "follow_symlinks": False,
+            "exclude_binary_files": True,
+            "search_archives": False,
             "traversal_workers": True,
         },
     ],

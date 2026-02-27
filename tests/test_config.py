@@ -26,6 +26,7 @@ class TestConfig:
         assert config.respect_ignore_files is True
         assert config.follow_symlinks is False
         assert config.exclude_binary_files is True
+        assert config.search_archives is False
         assert config.editor == "vim"
 
     def test_from_toml_string(self, tmp_path):
@@ -57,6 +58,7 @@ class TestConfig:
             cache_ttl_seconds=120,
             follow_symlinks=True,
             exclude_binary_files=False,
+            search_archives=True,
             editor="nano",
         )
         config_file = tmp_path / "config.toml"
@@ -69,6 +71,7 @@ class TestConfig:
         assert reloaded.cache_ttl_seconds == 120
         assert reloaded.follow_symlinks is True
         assert reloaded.exclude_binary_files is False
+        assert reloaded.search_archives is True
         assert reloaded.editor == "nano"
 
     def test_invalid_respect_ignore_files_type_falls_back_to_default(self, tmp_path):
@@ -80,13 +83,14 @@ class TestConfig:
         assert config.respect_ignore_files is True
 
     def test_invalid_follow_symlinks_type_falls_back_to_default(self, tmp_path):
-        toml_content = b'[search]\nfollow_symlinks = "yes"\nexclude_binary_files = "no"\n'
+        toml_content = b'[search]\nfollow_symlinks = "yes"\nexclude_binary_files = "no"\nsearch_archives = "yes"\n'
         config_file = tmp_path / "config.toml"
         config_file.write_bytes(toml_content)
 
         config = Config.from_file(config_file)
         assert config.follow_symlinks is False
         assert config.exclude_binary_files is True
+        assert config.search_archives is False
 
     def test_invalid_parallel_workers_type_or_value_falls_back_to_default(self, tmp_path):
         toml_content = b'[search]\nparallel_workers = 0\n'
