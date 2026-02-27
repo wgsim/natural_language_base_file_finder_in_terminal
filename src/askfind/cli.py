@@ -69,6 +69,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Include binary files in results (default excludes binary files)",
     )
+    parser.add_argument(
+        "--search-archives",
+        action="store_true",
+        help="Search inside supported archives (.zip, .tar.gz) by entry path/name",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--interactive-session", action="store_true", help=argparse.SUPPRESS)
     return parser
@@ -271,6 +276,7 @@ def _handle_index(args: argparse.Namespace, *, raw_argv: list[str]) -> int:
                     )
                     and not args.include_binary
                 ),
+                search_archives=False,
                 traversal_workers=args.workers or configured_workers,
             )
 
@@ -341,6 +347,7 @@ def _handle_config(args: argparse.Namespace) -> int:
         table.add_row("respect_ignore_files", str(config.respect_ignore_files))
         table.add_row("follow_symlinks", str(config.follow_symlinks))
         table.add_row("exclude_binary_files", str(config.exclude_binary_files))
+        table.add_row("search_archives", str(config.search_archives))
         table.add_row("editor", config.editor)
         api_key = get_api_key()
         table.add_row("api_key", "****" + api_key[-4:] if api_key else "[not set]")
@@ -378,7 +385,13 @@ def _handle_config(args: argparse.Namespace) -> int:
                 print(f"Error: '{args.key}' must be >= 1.", file=sys.stderr)
                 return 2
 
-        if args.key in {"cache_enabled", "respect_ignore_files", "follow_symlinks", "exclude_binary_files"}:
+        if args.key in {
+            "cache_enabled",
+            "respect_ignore_files",
+            "follow_symlinks",
+            "exclude_binary_files",
+            "search_archives",
+        }:
             try:
                 value = _parse_bool(value)
             except ValueError:
@@ -468,6 +481,10 @@ def main(argv: list[str] | None = None) -> int:
         getattr(config, "exclude_binary_files", True),
         default=True,
     )
+    search_archives = _read_bool_config(
+        getattr(config, "search_archives", False),
+        default=False,
+    ) or args.search_archives
     cache_enabled = _read_bool_config(
         getattr(config, "cache_enabled", True),
         default=True,
@@ -495,6 +512,7 @@ def main(argv: list[str] | None = None) -> int:
         config.respect_ignore_files = respect_ignore_files
         config.follow_symlinks = follow_symlinks
         config.exclude_binary_files = exclude_binary_files
+        config.search_archives = search_archives
         config.parallel_workers = parallel_workers
         config.cache_enabled = cache_enabled
         config.cache_ttl_seconds = cache_ttl_seconds
@@ -512,6 +530,7 @@ def main(argv: list[str] | None = None) -> int:
         config.respect_ignore_files = respect_ignore_files
         config.follow_symlinks = follow_symlinks
         config.exclude_binary_files = exclude_binary_files
+        config.search_archives = search_archives
         config.parallel_workers = parallel_workers
         config.cache_enabled = cache_enabled
         config.cache_ttl_seconds = cache_ttl_seconds
@@ -557,6 +576,7 @@ def main(argv: list[str] | None = None) -> int:
             respect_ignore_files=respect_ignore_files,
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
+            search_archives=search_archives,
             traversal_workers=parallel_workers,
         )
         root_fingerprint = compute_root_fingerprint(root_path)
@@ -599,6 +619,7 @@ def main(argv: list[str] | None = None) -> int:
                     respect_ignore_files=respect_ignore_files,
                     follow_symlinks=follow_symlinks,
                     exclude_binary_files=exclude_binary_files,
+                    search_archives=search_archives,
                     traversal_workers=parallel_workers,
                 )
                 index_diagnostics = IndexQueryDiagnostics()
@@ -620,6 +641,7 @@ def main(argv: list[str] | None = None) -> int:
                             respect_ignore_files=respect_ignore_files,
                             follow_symlinks=follow_symlinks,
                             exclude_binary_files=exclude_binary_files,
+                            search_archives=search_archives,
                             traversal_workers=parallel_workers,
                         )
                     )

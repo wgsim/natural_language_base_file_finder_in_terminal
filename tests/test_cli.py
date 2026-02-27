@@ -22,6 +22,7 @@ def _make_mock_config(default_root="."):
     mock_config.respect_ignore_files = True
     mock_config.follow_symlinks = False
     mock_config.exclude_binary_files = True
+    mock_config.search_archives = False
     mock_config.editor = "vim"
     return mock_config
 
@@ -118,6 +119,11 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["test", "--include-binary"])
         assert args.include_binary is True
+
+    def test_search_archives_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--search-archives"])
+        assert args.search_archives is True
 
 
 class TestValidateBaseUrl:
@@ -645,6 +651,42 @@ class TestMainAdditionalBranches:
 
         assert result == 1
         assert mock_walk.call_args.kwargs["exclude_binary_files"] is False
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_search_archives_flag_enables_archive_scan(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.search_archives = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--search-archives", "--root", str(tmp_path)])
+
+        assert result == 1
+        assert mock_walk.call_args.kwargs["search_archives"] is True
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_config_search_archives_true_applies_without_flag(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.search_archives = True
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--root", str(tmp_path)])
+
+        assert result == 1
+        assert mock_walk.call_args.kwargs["search_archives"] is True
 
     @patch("askfind.cli.SearchCache")
     @patch("askfind.cli.walk_and_filter", return_value=[])

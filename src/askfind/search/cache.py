@@ -40,6 +40,7 @@ def build_search_cache_key(
     respect_ignore_files: bool,
     follow_symlinks: bool,
     exclude_binary_files: bool,
+    search_archives: bool,
     traversal_workers: int,
 ) -> str:
     payload = {
@@ -52,6 +53,7 @@ def build_search_cache_key(
         "respect_ignore_files": respect_ignore_files,
         "follow_symlinks": follow_symlinks,
         "exclude_binary_files": exclude_binary_files,
+        "search_archives": search_archives,
         "traversal_workers": traversal_workers,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))

@@ -169,6 +169,7 @@ def main() -> int:
         respect_ignore_files=not args.no_ignore,
         follow_symlinks=args.follow_symlinks,
         exclude_binary_files=not args.include_binary,
+        search_archives=False,
         traversal_workers=INDEX_QUERY_WORKERS,
     )
 

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import tarfile
+import zipfile
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from collections.abc import Generator
 from dataclasses import dataclass
@@ -14,6 +16,7 @@ from askfind.search.filters import SearchFilters
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".hg", ".svn"}
 IGNORE_FILES = (".gitignore", ".askfindignore")
 BINARY_PROBE_BYTES = 4096
+ARCHIVE_SUFFIXES = (".zip", ".tar.gz")
 
 
 @dataclass(frozen=True)
@@ -148,6 +151,39 @@ def _is_binary_file(path: Path) -> bool:
     return False
 
 
+def _is_supported_archive(path: Path, *, is_file: bool) -> bool:
+    if not is_file:
+        return False
+    lowered = path.name.lower()
+    return any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES)
+
+
+def _iter_archive_member_paths(path: Path) -> list[str]:
+    lowered = path.name.lower()
+    try:
+        if lowered.endswith(".zip"):
+            with zipfile.ZipFile(path, "r") as handle:
+                return [info.filename for info in handle.infolist() if not info.is_dir()]
+        if lowered.endswith(".tar.gz"):
+            with tarfile.open(path, "r:gz") as handle:
+                return [member.name for member in handle.getmembers() if member.isfile()]
+    except (OSError, zipfile.BadZipFile, tarfile.TarError):
+        return []
+    return []
+
+
+def _archive_matches_filters(archive_path: Path, filters: SearchFilters) -> bool:
+    for member_path in _iter_archive_member_paths(archive_path):
+        member_name = Path(member_path).name
+        synthetic_path = f"{archive_path.as_posix()}::{member_path}"
+        if not filters.matches_name(member_name):
+            continue
+        if not filters.matches_path(synthetic_path):
+            continue
+        return True
+    return False
+
+
 def walk_and_filter(
     root: Path,
     filters: SearchFilters,
@@ -155,6 +191,7 @@ def walk_and_filter(
     respect_ignore_files: bool = True,
     follow_symlinks: bool = False,
     exclude_binary_files: bool = True,
+    search_archives: bool = False,
     traversal_workers: int = 1,
 ) -> Generator[Path, None, None]:
     """Walk filesystem from root, yielding paths that match filters.
@@ -178,6 +215,7 @@ def walk_and_filter(
             ignore_rules=ignore_rules,
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
+            search_archives=search_archives,
             visited_dirs=visited_dirs,
             workers=workers,
             budget=budget,
@@ -191,6 +229,7 @@ def walk_and_filter(
             ignore_rules=ignore_rules,
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
+            search_archives=search_archives,
             visited_dirs=visited_dirs,
             budget=budget,
         )
@@ -211,6 +250,7 @@ def _scan_directory(
     ignore_rules: list[_IgnoreRule] | None,
     follow_symlinks: bool,
     exclude_binary_files: bool,
+    search_archives: bool,
     remaining_matches: int | None,
 ) -> _ScanOutcome:
     if remaining_matches == 0:
@@ -267,11 +307,19 @@ def _scan_directory(
                 continue
 
             # Tier 1: name and path checks (no I/O)
-            if not filters.matches_name(entry.name):
-                schedule_recursion(is_dir, entry_path, depth)
-                continue
+            direct_name_match = filters.matches_name(entry.name)
+            direct_path_match = filters.matches_path(str(entry_path))
+            direct_match = direct_name_match and direct_path_match
+            archive_match = False
+            if (
+                search_archives
+                and not direct_match
+                and not filters.has
+                and _is_supported_archive(entry_path, is_file=is_file)
+            ):
+                archive_match = _archive_matches_filters(entry_path, filters)
 
-            if not filters.matches_path(str(entry_path)):
+            if not direct_match and not archive_match:
                 schedule_recursion(is_dir, entry_path, depth)
                 continue
 
@@ -286,7 +334,7 @@ def _scan_directory(
                 schedule_recursion(is_dir, entry_path, depth)
                 continue
 
-            if exclude_binary_files and is_file and _is_binary_file(entry_path):
+            if exclude_binary_files and is_file and _is_binary_file(entry_path) and not archive_match:
                 continue
 
             # Tier 3: content checks (most expensive, files only)
@@ -324,6 +372,7 @@ def _scan_recursive(
     ignore_rules: list[_IgnoreRule] | None,
     follow_symlinks: bool,
     exclude_binary_files: bool,
+    search_archives: bool,
     visited_dirs: set[tuple[int, int]],
     budget: _SearchBudget,
 ) -> Generator[Path, None, None]:
@@ -338,6 +387,7 @@ def _scan_recursive(
         ignore_rules=ignore_rules,
         follow_symlinks=follow_symlinks,
         exclude_binary_files=exclude_binary_files,
+        search_archives=search_archives,
         remaining_matches=budget.remaining,
     )
     for path in outcome.matches:
@@ -366,6 +416,7 @@ def _scan_recursive(
             ignore_rules=next_ignore_rules,
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
+            search_archives=search_archives,
             visited_dirs=visited_dirs,
             budget=budget,
         )
@@ -378,6 +429,7 @@ def _scan_parallel(
     ignore_rules: list[_IgnoreRule] | None,
     follow_symlinks: bool,
     exclude_binary_files: bool,
+    search_archives: bool,
     visited_dirs: set[tuple[int, int]],
     workers: int,
     budget: _SearchBudget,
@@ -394,6 +446,7 @@ def _scan_parallel(
             ignore_rules=ignore_rules,
             follow_symlinks=follow_symlinks,
             exclude_binary_files=exclude_binary_files,
+            search_archives=search_archives,
             remaining_matches=budget.remaining,
         )
         pending[root_future] = None
@@ -433,6 +486,7 @@ def _scan_parallel(
                         ignore_rules=next_ignore_rules,
                         follow_symlinks=follow_symlinks,
                         exclude_binary_files=exclude_binary_files,
+                        search_archives=search_archives,
                         remaining_matches=budget.remaining,
                     )
                     pending[next_future] = None
