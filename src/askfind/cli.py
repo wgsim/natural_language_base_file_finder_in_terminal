@@ -17,6 +17,13 @@ from askfind.llm.client import LLMClient
 from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import setup_logging, get_logger
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
+from askfind.search.index import (
+    IndexOptions,
+    build_index,
+    clear_index,
+    get_index_status,
+    update_index,
+)
 
 logger = get_logger(__name__)
 from askfind.output.formatter import FileResult, format_json, format_plain, format_verbose
@@ -117,6 +124,50 @@ def _build_config_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _add_index_root_arg(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("-r", "--root", default=".", help="Search root directory")
+
+
+def _add_index_traversal_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--workers", type=int, default=0, help="Traversal workers (0=use config)")
+    parser.add_argument(
+        "--no-ignore",
+        action="store_true",
+        help="Ignore .gitignore/.askfindignore rules during traversal",
+    )
+    parser.add_argument(
+        "--follow-symlinks",
+        action="store_true",
+        help="Follow symlinked files/directories within the search root",
+    )
+    parser.add_argument(
+        "--include-binary",
+        action="store_true",
+        help="Include binary files in index (default excludes binary files)",
+    )
+
+
+def _build_index_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="askfind index")
+    subparsers = parser.add_subparsers(dest="index_action", required=True)
+
+    build_parser = subparsers.add_parser("build", help="Build file index for a search root")
+    _add_index_root_arg(build_parser)
+    _add_index_traversal_args(build_parser)
+
+    update_parser = subparsers.add_parser("update", help="Refresh file index for a search root")
+    _add_index_root_arg(update_parser)
+    _add_index_traversal_args(update_parser)
+
+    status_parser = subparsers.add_parser("status", help="Show index status for a search root")
+    _add_index_root_arg(status_parser)
+
+    clear_parser = subparsers.add_parser("clear", help="Delete index for a search root")
+    _add_index_root_arg(clear_parser)
+
+    return parser
+
+
 def _has_root_override(raw_argv: list[str]) -> bool:
     """Return True when root was explicitly provided on CLI."""
     for arg in raw_argv:
@@ -155,6 +206,87 @@ def _emit_cache_stats(cache: SearchCache | None) -> None:
     misses = stats.get("misses", 0)
     sets = stats.get("sets", 0)
     print(f"cache: hits={hits} misses={misses} sets={sets}", file=sys.stderr)
+
+
+def _handle_index(args: argparse.Namespace, *, raw_argv: list[str]) -> int:
+    config = Config.from_file(get_config_path())
+    root_value = args.root if _has_root_override(raw_argv) else config.default_root
+    root_path = Path(root_value).resolve()
+
+    try:
+        if args.index_action in {"build", "update"}:
+            if args.workers < 0:
+                print("Error: --workers must be >= 0.", file=sys.stderr)
+                return 2
+            configured_workers = _read_positive_int_config(
+                getattr(config, "parallel_workers", 1),
+                default=1,
+            )
+            options = IndexOptions(
+                respect_ignore_files=_read_bool_config(
+                    getattr(config, "respect_ignore_files", True),
+                    default=True,
+                ) and not args.no_ignore,
+                follow_symlinks=_read_bool_config(
+                    getattr(config, "follow_symlinks", False),
+                    default=False,
+                ) or args.follow_symlinks,
+                exclude_binary_files=(
+                    _read_bool_config(
+                        getattr(config, "exclude_binary_files", True),
+                        default=True,
+                    )
+                    and not args.include_binary
+                ),
+                traversal_workers=args.workers or configured_workers,
+            )
+
+            if args.index_action == "build":
+                result = build_index(root=root_path, options=options)
+                print(f"Index built for {result.root} (files={result.file_count})")
+            else:
+                result = update_index(root=root_path, options=options)
+                print(f"Index updated for {result.root} (files={result.file_count})")
+            return 0
+
+        if args.index_action == "status":
+            status = get_index_status(root=root_path)
+            exists_text = "yes" if status.exists else "no"
+            stale_text = "yes" if status.stale else "no"
+            print(
+                f"Index status for {status.root}: "
+                f"exists={exists_text} files={status.file_count} stale={stale_text}"
+            )
+            return 0
+
+        if args.index_action == "clear":
+            cleared = clear_index(root=root_path)
+            if cleared.cleared:
+                print(f"Index cleared for {cleared.root}")
+            else:
+                print(f"No index found for {cleared.root}")
+            return 0
+    except FileNotFoundError:
+        print(f"Error: Search root not found: {root_value}", file=sys.stderr)
+        return 3
+    except NotADirectoryError:
+        print(f"Error: Search root is not a directory: {root_value}", file=sys.stderr)
+        return 3
+    except PermissionError:
+        print(
+            "Error: Permission denied while accessing search root or index cache",
+            file=sys.stderr,
+        )
+        return 3
+    except OSError:
+        logger.exception("Unhandled error while executing askfind index command")
+        print(
+            "Error: Unexpected internal error. Run with --debug for details.",
+            file=sys.stderr,
+        )
+        return 3
+
+    return 2
 
 
 def _handle_config(args: argparse.Namespace) -> int:
@@ -275,6 +407,12 @@ def main(argv: list[str] | None = None) -> int:
         config_parser = _build_config_parser()
         args = config_parser.parse_args(raw_argv[1:])  # Skip "config" word
         return _handle_config(args)
+
+    # Check if first arg is "index" subcommand
+    if raw_argv and len(raw_argv) > 0 and raw_argv[0] == "index":
+        index_parser = _build_index_parser()
+        args = index_parser.parse_args(raw_argv[1:])  # Skip "index" word
+        return _handle_index(args, raw_argv=raw_argv[1:])
 
     # Otherwise parse as search/interactive command
     parser = build_parser()

@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.6** (Current) - Cache observability and interactive cache parity
+- **v0.1.7** (Current) - Index commands, LLM memoization, and CI perf regression gate
+- **v0.1.6** - Cache observability and interactive cache parity
 - **v0.1.5** - Search cache and repeated-query acceleration
 - **v0.1.4** - Parallel traversal workers and performance baseline updates
 - **v0.1.3** - Symlink traversal, binary exclusion, and release workflow
@@ -21,9 +22,9 @@
 #### Performance Optimizations
 - [x] Parallel directory traversal using threading (`parallel_workers`, `--workers`)
 - [x] Caching layer for repeated queries (`cache_enabled`, `cache_ttl_seconds`, `--no-cache`)
-- [ ] Index generation for large codebases (optional)
+- [x] Index generation for large codebases (optional `askfind index ...`)
 - [ ] Incremental search with early termination
-- [ ] Memoization of LLM responses for similar queries
+- [x] Memoization of LLM responses for similar queries
 
 #### Search Enhancements
 - [x] Git-aware searching (`.gitignore` support during traversal)
@@ -185,7 +186,7 @@
 
 ## Known Limitations
 
-### Current v0.1.6 Limitations
+### Current v0.1.7 Limitations
 
 1. **LLM Dependency**: Requires internet connection and API key
    - *Future*: Offline mode with rule-based fallback

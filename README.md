@@ -13,6 +13,8 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 🔗 **Safe Symlink Traversal** - Optional `--follow-symlinks` follows links only inside search root
 - 🧪 **Binary File Exclusion** - Binary files are excluded by default (override with `--include-binary`)
 - 💾 **Search Cache** - Reuses recent query results (disable per run with `--no-cache`, inspect with `--cache-stats`)
+- 🗂️ **Index Management** - Build/update/status/clear optional per-root file indexes
+- 🧠 **LLM Filter Memoization** - Reuses repeated filter-extraction calls per process
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
 - 🔐 **Secure Secrets** - Keychain-first API key storage (macOS Keychain, Linux Secret Service, Windows Credential Manager)
 - 📋 **Multiple Output Formats** - Plain, verbose, or JSON output for scripting
@@ -73,6 +75,12 @@ askfind "python files" --no-cache
 
 # Print cache counters for the command
 askfind "python files" --cache-stats
+
+# Optional index lifecycle commands
+askfind index build --root .
+askfind index update --root .
+askfind index status --root .
+askfind index clear --root .
 
 # Search everything (ignore files disabled)
 askfind "python files" --no-ignore
@@ -142,6 +150,9 @@ askfind config models
    Search results are cached by default. Use `--no-cache` to bypass cache for one command, or `--cache-stats` to print hit/miss/set counters.
 
 3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance
+
+4. **Optional Index Management**: Use `askfind index` commands to precompute and manage
+   per-root file path indexes for large repositories.
 
 ## Filter Schema
 
@@ -243,6 +254,7 @@ askfind/
 │   ├── search/
 │   │   ├── filters.py      # Filter dataclass and matching logic
 │   │   ├── walker.py       # Filesystem traversal
+│   │   ├── index.py        # Persistent per-root index management
 │   │   └── reranker.py     # Semantic re-ranking
 │   ├── output/
 │   │   └── formatter.py    # Output formatters (plain/verbose/JSON)
@@ -272,12 +284,17 @@ conda run -n askfind_env pytest tests/ --cov=askfind --cov-report=html
 ```
 
 CI enforces a minimum coverage gate of 95%.
+CI also runs a traversal performance regression gate via
+`scripts/ci/benchmark_regression_gate.py`.
 
 ### Benchmark Traversal
 
 ```bash
 # Traversal baseline (no LLM calls)
 PYTHONPATH=src python scripts/bench/benchmark_walk.py --root . --repeats 5 --workers 4
+
+# CI-style performance regression check (parallel vs sequential median ratio)
+PYTHONPATH=src python scripts/ci/benchmark_regression_gate.py --root .
 ```
 
 ### Git Hooks

@@ -2,6 +2,24 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.7] - 2026-02-27
+
+### Added
+- Added index management commands:
+  - `askfind index build`
+  - `askfind index update`
+  - `askfind index status`
+  - `askfind index clear`
+- Added persistent per-root index storage under `~/.cache/askfind/indexes`.
+- Added CI performance regression gate:
+  - new script `scripts/ci/benchmark_regression_gate.py`
+  - new CI step in `.github/workflows/ci.yml`
+- Added process-local memoization for `LLMClient.extract_filters` with TTL and bounded cache size.
+- Added tests for index module and benchmark regression gate.
+
+### Changed
+- Updated package version metadata to `0.1.7`.
+
 ## [0.1.6] - 2026-02-26
 
 ### Added
