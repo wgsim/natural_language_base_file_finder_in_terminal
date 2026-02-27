@@ -156,13 +156,15 @@ class TestParseLlmResponse:
         assert filters.fuzzy is None
 
     def test_rejects_non_string_type_perm_depth_size_mod(self):
-        raw = '{"type": 1, "perm": 2, "depth": 3, "size": 4, "mod": 5}'
+        raw = '{"type": 1, "perm": 2, "depth": 3, "size": 4, "mod": 5, "mod_after": 6, "mod_before": 7}'
         filters = parse_llm_response(raw)
         assert filters.type is None
         assert filters.perm is None
         assert filters.depth is None
         assert filters.size is None
         assert filters.mod is None
+        assert filters.mod_after is None
+        assert filters.mod_before is None
 
     def test_rejects_invalid_permission_values(self):
         raw = '{"perm": "rwa"}'
@@ -211,6 +213,23 @@ class TestParseLlmResponse:
         raw = '{"mod": ">0d"}'
         filters = parse_llm_response(raw)
         assert filters.mod is None
+
+    def test_accepts_absolute_mod_date_range(self):
+        raw = '{"mod_after": "2026-01-01", "mod_before": "2026-01-15"}'
+        filters = parse_llm_response(raw)
+        assert filters.mod_after == "2026-01-01"
+        assert filters.mod_before == "2026-01-15"
+
+    def test_accepts_absolute_mod_datetime_and_normalizes_timezone(self):
+        raw = '{"mod_after": "2026-01-01T03:00:00+03:00"}'
+        filters = parse_llm_response(raw)
+        assert filters.mod_after == "2026-01-01T00:00:00+00:00"
+
+    def test_rejects_invalid_absolute_mod_values(self):
+        raw = '{"mod_after": "2026-13-40", "mod_before": ""}'
+        filters = parse_llm_response(raw)
+        assert filters.mod_after is None
+        assert filters.mod_before is None
 
     def test_rejects_empty_and_unparseable_mod_constraint(self):
         raw = '{"mod": ">"}'

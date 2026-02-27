@@ -169,6 +169,8 @@ askfind understands these filter types:
 | `regex` | `test_.*\.py` | Regex pattern on filename |
 | `fuzzy` | `confg` | Fuzzy match on filename |
 | `mod` | `>7d` | Modified within timeframe |
+| `mod_after` | `2026-01-01` | Modified on/after absolute date (UTC) |
+| `mod_before` | `2026-01-15` | Modified up to absolute date (inclusive for date-only) |
 | `size` | `>1MB` | File size constraint |
 | `has` | `["TODO"]` | File content must contain terms |
 | `type` | `file`, `dir` | Entry type |

@@ -5,11 +5,11 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import fields
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from askfind.search.filters import SearchFilters, parse_size, parse_time_delta
+from askfind.search.filters import SearchFilters, parse_mod_datetime, parse_size, parse_time_delta
 
 _LIST_FIELDS = {"ext", "not_ext", "has"}
 _MAX_LIST_LENGTH = 20  # Maximum items in list fields
@@ -19,6 +19,9 @@ _VALID_PERM_VALUES = {"r", "w", "x"}
 _MAX_DEPTH = 1024
 _MAX_SIZE_FILTER_BYTES = 1024**5  # 1 PB
 _MAX_MOD_DELTA = timedelta(days=36500)  # ~100 years
+_MIN_MOD_YEAR = 1970
+_MAX_FUTURE_YEARS = 10
+_DATE_ONLY_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
 
 def _split_constraint(value: str) -> tuple[str, str]:
@@ -64,6 +67,24 @@ def _validate_mod_value(value: str) -> str | None:
     if delta <= timedelta(0) or delta > _MAX_MOD_DELTA:
         return None
     return f"{op}{raw}" if op else raw
+
+
+def _validate_mod_absolute_value(value: str) -> str | None:
+    raw = value.strip()[:_MAX_TERM_LENGTH]
+    if not raw:
+        return None
+    try:
+        parsed = parse_mod_datetime(raw, upper_bound=False)
+    except (ValueError, OverflowError):
+        return None
+
+    max_year = datetime.now(timezone.utc).year + _MAX_FUTURE_YEARS
+    if parsed.year < _MIN_MOD_YEAR or parsed.year > max_year:
+        return None
+
+    if _DATE_ONLY_PATTERN.match(raw):
+        return parsed.date().isoformat()
+    return parsed.isoformat(timespec="seconds")
 
 
 def _validate_and_sanitize_value(key: str, value: Any) -> Any | None:
@@ -140,6 +161,11 @@ def _validate_and_sanitize_value(key: str, value: Any) -> Any | None:
         if not isinstance(value, str):
             return None
         return _validate_mod_value(value)
+
+    if key in {"mod_after", "mod_before"}:
+        if not isinstance(value, str):
+            return None
+        return _validate_mod_absolute_value(value)
 
     # Unknown field type - reject
     return None

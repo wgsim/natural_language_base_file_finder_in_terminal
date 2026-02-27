@@ -8,6 +8,7 @@ from unittest.mock import patch
 from askfind.search.filters import (
     MAX_CONTENT_SCAN_BYTES,
     SearchFilters,
+    parse_mod_datetime,
     parse_size,
     parse_time_delta,
 )
@@ -52,6 +53,18 @@ class TestParseTimeDelta:
     def test_weeks(self):
         delta = parse_time_delta("2w")
         assert delta.days == 14
+
+
+class TestParseModDatetime:
+    def test_date_only_lower_and_upper_bound(self):
+        lower = parse_mod_datetime("2026-01-10", upper_bound=False)
+        upper = parse_mod_datetime("2026-01-10", upper_bound=True)
+        assert lower == datetime(2026, 1, 10, 0, 0, tzinfo=timezone.utc)
+        assert upper == datetime(2026, 1, 11, 0, 0, tzinfo=timezone.utc)
+
+    def test_datetime_with_offset_is_normalized_to_utc(self):
+        dt = parse_mod_datetime("2026-01-10T03:00:00+03:00")
+        assert dt == datetime(2026, 1, 10, 0, 0, tzinfo=timezone.utc)
 
 
 class TestSearchFilters:
@@ -212,6 +225,34 @@ class TestSearchFilters:
             old = SearchFilters(mod="<1d")
             assert old.matches_stat(older_stat) is True
             assert old.matches_stat(newer_stat) is False
+
+    def test_mod_after_and_mod_before_date_range(self):
+        inside = SimpleNamespace(
+            st_mtime=datetime(2026, 1, 12, 8, tzinfo=timezone.utc).timestamp()
+        )
+        before = SimpleNamespace(
+            st_mtime=datetime(2025, 12, 31, 23, 59, tzinfo=timezone.utc).timestamp()
+        )
+        after = SimpleNamespace(
+            st_mtime=datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc).timestamp()
+        )
+
+        filters = SearchFilters(mod_after="2026-01-01", mod_before="2026-01-15")
+        assert filters.matches_stat(inside) is True
+        assert filters.matches_stat(before) is False
+        assert filters.matches_stat(after) is False
+
+    def test_mod_before_is_inclusive_for_date_only_queries(self):
+        end_of_day = SimpleNamespace(
+            st_mtime=datetime(2026, 1, 15, 23, 59, 59, tzinfo=timezone.utc).timestamp()
+        )
+        next_day = SimpleNamespace(
+            st_mtime=datetime(2026, 1, 16, 0, 0, tzinfo=timezone.utc).timestamp()
+        )
+
+        filters = SearchFilters(mod_before="2026-01-15")
+        assert filters.matches_stat(end_of_day) is True
+        assert filters.matches_stat(next_day) is False
 
     def test_perm_filter_r_w_x_pass_and_fail_paths(self):
         full_access = SimpleNamespace(st_mode=0o777)
