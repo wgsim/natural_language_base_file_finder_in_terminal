@@ -32,7 +32,7 @@ jobs:
           python -m pip install -e . pytest==9.0.2 pytest-cov==7.0.0 ruff==0.6.9 pip-audit==2.10.0 mypy==1.11.2
 
       - name: Lint
-        run: ruff check src tests
+        run: ruff check src tests scripts
 
       - name: Type check
         run: python -m mypy src

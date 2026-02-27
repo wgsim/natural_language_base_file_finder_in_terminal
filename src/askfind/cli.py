@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from dataclasses import fields
+from dataclasses import dataclass, field, fields
 
 from askfind.config import Config, get_api_key, get_config_path, set_api_key
 from askfind.llm.client import LLMClient
@@ -18,6 +18,7 @@ from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import setup_logging, get_logger
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
 from askfind.search.index import (
+    IndexQueryDiagnostics,
     IndexOptions,
     build_index,
     clear_index,
@@ -201,12 +202,43 @@ def _read_positive_int_config(value: object, *, default: int) -> int:
 def _emit_cache_stats(cache: SearchCache | None) -> None:
     if cache is None:
         print("cache: disabled", file=sys.stderr)
-        return
-    stats = cache.stats()
-    hits = stats.get("hits", 0)
-    misses = stats.get("misses", 0)
-    sets = stats.get("sets", 0)
-    print(f"cache: hits={hits} misses={misses} sets={sets}", file=sys.stderr)
+    else:
+        stats = cache.stats()
+        hits = stats.get("hits", 0)
+        misses = stats.get("misses", 0)
+        sets = stats.get("sets", 0)
+        print(f"cache: hits={hits} misses={misses} sets={sets}", file=sys.stderr)
+
+
+@dataclass
+class _IndexQueryRuntimeStats:
+    hits: int = 0
+    fallbacks: int = 0
+    fallback_reasons: dict[str, int] = field(default_factory=dict)
+
+    def record_hit(self) -> None:
+        self.hits += 1
+
+    def record_fallback(self, reason: str | None) -> None:
+        self.fallbacks += 1
+        normalized_reason = reason or "unknown"
+        self.fallback_reasons[normalized_reason] = self.fallback_reasons.get(normalized_reason, 0) + 1
+
+
+def _emit_index_stats(index_stats: _IndexQueryRuntimeStats) -> None:
+    if not index_stats.fallback_reasons:
+        reasons_text = "none"
+    else:
+        reasons_text = ",".join(
+            f"{reason}:{count}"
+            for reason, count in sorted(index_stats.fallback_reasons.items())
+        )
+    print(
+        f"index: hits={index_stats.hits} "
+        f"fallbacks={index_stats.fallbacks} "
+        f"reasons={reasons_text}",
+        file=sys.stderr,
+    )
 
 
 def _handle_index(args: argparse.Namespace, *, raw_argv: list[str]) -> int:
@@ -511,6 +543,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     cache = SearchCache(ttl_seconds=cache_ttl_seconds) if cache_enabled else None
+    index_stats = _IndexQueryRuntimeStats()
     cache_key: str | None = None
     root_fingerprint: str | None = None
     if cache is not None:
@@ -568,13 +601,16 @@ def main(argv: list[str] | None = None) -> int:
                     exclude_binary_files=exclude_binary_files,
                     traversal_workers=parallel_workers,
                 )
+                index_diagnostics = IndexQueryDiagnostics()
                 indexed_paths = query_index(
                     root=root_path,
                     filters=filters,
                     max_results=max_results,
                     options=index_options,
+                    diagnostics=index_diagnostics,
                 )
                 if indexed_paths is None:
+                    index_stats.record_fallback(index_diagnostics.fallback_reason)
                     logger.debug("Index query miss/unusable; falling back to filesystem walk")
                     paths = list(
                         walk_and_filter(
@@ -588,6 +624,7 @@ def main(argv: list[str] | None = None) -> int:
                         )
                     )
                 else:
+                    index_stats.record_hit()
                     logger.debug("Index query hit; using indexed paths")
                     paths = indexed_paths
                 results = [FileResult.from_path(p) for p in paths]
@@ -610,6 +647,7 @@ def main(argv: list[str] | None = None) -> int:
         if not results:
             if args.cache_stats:
                 _emit_cache_stats(cache)
+                _emit_index_stats(index_stats)
             return 1
 
         if args.json_output:
@@ -620,6 +658,7 @@ def main(argv: list[str] | None = None) -> int:
             print(format_plain(results))
         if args.cache_stats:
             _emit_cache_stats(cache)
+            _emit_index_stats(index_stats)
         return 0
     except KeyboardInterrupt:
         print("\nSearch cancelled.", file=sys.stderr)

@@ -82,7 +82,7 @@ Feature suggestions are welcome! Please:
 4. **Check Code Quality**
    ```bash
    conda run -n askfind_env python scripts/ci/check_dev_tool_pins.py
-   conda run -n askfind_env ruff check src tests
+   conda run -n askfind_env ruff check src tests scripts
    conda run -n askfind_env python -m mypy src
    ```
 
