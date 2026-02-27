@@ -57,3 +57,6 @@ jobs:
 
       - name: Performance regression gate
         run: PYTHONPATH=src python scripts/ci/benchmark_regression_gate.py --root .
+
+      - name: Index query regression gate
+        run: PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root .
