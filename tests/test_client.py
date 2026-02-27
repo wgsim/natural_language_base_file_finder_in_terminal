@@ -1,5 +1,8 @@
 """Tests for LLM client."""
 
+import json
+from collections import OrderedDict
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -9,6 +12,15 @@ from askfind.llm.client import LLMClient
 
 
 class TestLLMClient:
+    @pytest.fixture(autouse=True)
+    def _isolate_extract_filters_cache(self, tmp_path: Path, monkeypatch):
+        monkeypatch.setattr(
+            LLMClient,
+            "_EXTRACT_FILTERS_DISK_CACHE_FILE",
+            tmp_path / "extract_filters_cache.json",
+        )
+        LLMClient.reset_extract_filters_cache()
+
     def test_context_manager(self):
         """Client should work as context manager."""
         with LLMClient(base_url="https://api.example.com", api_key="test-key", model="test-model") as client:
@@ -113,6 +125,163 @@ class TestLLMClient:
             with pytest.raises(httpx.HTTPStatusError):
                 with LLMClient(base_url="https://api.example.com", api_key="test-key", model="gpt-4") as client:
                     client.extract_filters("test query")
+
+    def test_extract_filters_disk_cache_hit_across_instances(self, tmp_path: Path):
+        """extract_filters should read persisted cache on a fresh client instance."""
+        LLMClient.reset_extract_filters_cache()
+        cache_file = tmp_path / "extract_filters_cache.json"
+
+        response_first = MagicMock()
+        response_first.json.return_value = {
+            "choices": [{"message": {"content": '{"ext": [".py"]}'}}]
+        }
+        response_second = MagicMock()
+        response_second.json.return_value = {
+            "choices": [{"message": {"content": '{"ext": [".md"]}'}}]
+        }
+
+        with patch.object(LLMClient, "_EXTRACT_FILTERS_DISK_CACHE_FILE", cache_file):
+            with patch("httpx.Client") as mock_client_class:
+                mock_http_first = MagicMock()
+                mock_http_first.post.return_value = response_first
+                mock_http_second = MagicMock()
+                mock_http_second.post.return_value = response_second
+                mock_client_class.side_effect = [mock_http_first, mock_http_second]
+
+                with LLMClient(base_url="https://api.example.com", api_key="test-key", model="gpt-4") as client:
+                    result_first = client.extract_filters("find Python files")
+                assert result_first == '{"ext": [".py"]}'
+                mock_http_first.post.assert_called_once()
+                assert cache_file.exists()
+
+                LLMClient.reset_extract_filters_cache()
+
+                with LLMClient(base_url="https://api.example.com", api_key="test-key", model="gpt-4") as client:
+                    result_second = client.extract_filters("find Python files")
+                assert result_second == '{"ext": [".py"]}'
+                mock_http_second.post.assert_not_called()
+
+    def test_extract_filters_malformed_disk_cache_falls_back_to_http(self, tmp_path: Path):
+        """extract_filters should ignore malformed disk cache payloads."""
+        LLMClient.reset_extract_filters_cache()
+        cache_file = tmp_path / "extract_filters_cache.json"
+        cache_file.write_text("{not-json", encoding="utf-8")
+
+        response = MagicMock()
+        response.json.return_value = {
+            "choices": [{"message": {"content": '{"ext": [".py"]}'}}]
+        }
+
+        with patch.object(LLMClient, "_EXTRACT_FILTERS_DISK_CACHE_FILE", cache_file):
+            with patch("httpx.Client") as mock_client_class:
+                mock_http = MagicMock()
+                mock_http.post.return_value = response
+                mock_client_class.return_value = mock_http
+
+                with LLMClient(base_url="https://api.example.com", api_key="test-key", model="gpt-4") as client:
+                    result = client.extract_filters("find Python files")
+
+                assert result == '{"ext": [".py"]}'
+                mock_http.post.assert_called_once()
+
+    def test_extract_filters_cache_stats_prunes_expired_entries(self):
+        LLMClient.reset_extract_filters_cache()
+        with LLMClient._extract_filters_cache_lock:
+            LLMClient._extract_filters_cache[("a", "m", "q1")] = (0.0, "expired")
+            LLMClient._extract_filters_cache[("a", "m", "q2")] = (float("inf"), "alive")
+            LLMClient._extract_filters_cache_hits = 2
+            LLMClient._extract_filters_cache_misses = 3
+
+        stats = LLMClient.extract_filters_cache_stats()
+
+        assert stats["size"] == 1
+        assert stats["hits"] == 2
+        assert stats["misses"] == 3
+
+    def test_enforce_extract_filters_cache_size_locked_removes_oldest(self):
+        LLMClient.reset_extract_filters_cache()
+        with LLMClient._extract_filters_cache_lock:
+            with patch.object(LLMClient, "_EXTRACT_FILTERS_CACHE_MAX_ENTRIES", 1):
+                LLMClient._extract_filters_cache[("a", "m", "q1")] = (100.0, "first")
+                LLMClient._extract_filters_cache[("a", "m", "q2")] = (200.0, "second")
+                LLMClient._enforce_extract_filters_cache_size_locked()
+
+        assert ("a", "m", "q1") not in LLMClient._extract_filters_cache
+        assert ("a", "m", "q2") in LLMClient._extract_filters_cache
+
+    def test_prune_disk_entries_handles_expiry_and_size_limit(self):
+        entries: OrderedDict[str, dict[str, float | str]] = OrderedDict(
+            [
+                ("k1", {"content": "a", "created_at": 1.0, "expires_at": 1.0}),
+                ("k2", {"content": "b", "created_at": 2.0, "expires_at": 999.0}),
+                ("k3", {"content": "c", "created_at": 3.0, "expires_at": 999.0}),
+            ]
+        )
+
+        with patch.object(LLMClient, "_EXTRACT_FILTERS_CACHE_MAX_ENTRIES", 1):
+            changed = LLMClient._prune_extract_filters_disk_entries_locked(
+                entries, now_wall=2.0
+            )
+
+        assert changed is True
+        assert list(entries.keys()) == ["k3"]
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            json.dumps(["not-a-dict"]),
+            json.dumps({"version": 999, "entries": {}}),
+            json.dumps({"version": 1, "entries": []}),
+        ],
+    )
+    def test_load_disk_entries_rejects_invalid_payload_shapes(self, tmp_path: Path, payload: str):
+        cache_file = tmp_path / "extract_filters_cache.json"
+        cache_file.write_text(payload, encoding="utf-8")
+
+        with patch.object(LLMClient, "_EXTRACT_FILTERS_DISK_CACHE_FILE", cache_file):
+            entries, changed = LLMClient._load_extract_filters_disk_entries_locked(now_wall=0.0)
+
+        assert entries == OrderedDict()
+        assert changed is False
+
+    def test_get_from_disk_cache_saves_when_pruned_payload_changed(self, tmp_path: Path):
+        cache_file = tmp_path / "extract_filters_cache.json"
+        cache_key = ("", "", "")
+        serialized_key = LLMClient._serialize_extract_filters_cache_key(cache_key)
+        payload = {
+            "version": 1,
+            "entries": {
+                serialized_key: {
+                    "content": "ok",
+                    "created_at": 10.0,
+                    "expires_at": 999.0,
+                },
+                "bad-shape": [],
+                "bad-content": {
+                    "content": 1,
+                    "created_at": 1.0,
+                    "expires_at": 999.0,
+                },
+                "bad-created": {
+                    "content": "x",
+                    "created_at": "nope",
+                    "expires_at": 999.0,
+                },
+                "bad-expires": {
+                    "content": "x",
+                    "created_at": 1.0,
+                    "expires_at": "nope",
+                },
+            },
+        }
+        cache_file.write_text(json.dumps(payload), encoding="utf-8")
+
+        with patch.object(LLMClient, "_EXTRACT_FILTERS_DISK_CACHE_FILE", cache_file):
+            value = LLMClient._get_extract_filters_from_disk_cache_locked(cache_key, now_wall=0.0)
+
+        assert value == "ok"
+        written = json.loads(cache_file.read_text(encoding="utf-8"))
+        assert list(written["entries"].keys()) == [serialized_key]
 
     def test_rerank_success(self):
         """rerank should return ordered list of filenames."""

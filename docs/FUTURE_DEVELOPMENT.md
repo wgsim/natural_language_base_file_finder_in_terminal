@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.7** (Current) - Index commands, LLM memoization, and CI perf regression gate
+- **v0.1.8** (Current) - Runtime index query path and persistent LLM memoization
+- **v0.1.7** - Index commands, LLM memoization, and CI perf regression gate
 - **v0.1.6** - Cache observability and interactive cache parity
 - **v0.1.5** - Search cache and repeated-query acceleration
 - **v0.1.4** - Parallel traversal workers and performance baseline updates
@@ -186,7 +187,7 @@
 
 ## Known Limitations
 
-### Current v0.1.7 Limitations
+### Current v0.1.8 Limitations
 
 1. **LLM Dependency**: Requires internet connection and API key
    - *Future*: Offline mode with rule-based fallback

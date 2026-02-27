@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import stat
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,12 +62,14 @@ class IndexClearResult:
 class _StoredIndexPayload:
     root_fingerprint: str
     paths: tuple[str, ...]
+    options: IndexOptions | None
 
 
 def build_index(*, root: Path, options: IndexOptions) -> IndexBuildResult:
     """Build a new index for root and overwrite any existing one."""
     _assert_root_is_directory(root)
-    file_paths = _collect_file_paths(root=root, options=options)
+    normalized_options = _normalize_options(options)
+    file_paths = _collect_file_paths(root=root, options=normalized_options)
     root_fingerprint = compute_root_fingerprint(root)
     index_path = _index_path_for_root(root)
     payload = {
@@ -74,12 +77,7 @@ def build_index(*, root: Path, options: IndexOptions) -> IndexBuildResult:
         "root": str(root),
         "created_at": time.time(),
         "root_fingerprint": root_fingerprint,
-        "options": {
-            "respect_ignore_files": options.respect_ignore_files,
-            "follow_symlinks": options.follow_symlinks,
-            "exclude_binary_files": options.exclude_binary_files,
-            "traversal_workers": options.traversal_workers,
-        },
+        "options": _serialize_options(normalized_options),
         "paths": file_paths,
     }
     _write_payload(index_path=index_path, payload=payload)
@@ -118,6 +116,56 @@ def get_index_status(*, root: Path) -> IndexStatusResult:
     )
 
 
+def query_index(
+    *,
+    root: Path,
+    filters: SearchFilters,
+    max_results: int,
+    options: IndexOptions,
+) -> list[Path] | None:
+    """Query an existing index.
+
+    Returns a list of matched paths when the index is usable, otherwise None.
+    None means callers should fall back to live filesystem traversal.
+    """
+    if not isinstance(filters, SearchFilters):
+        return None
+    if not _supports_index_query(filters):
+        return None
+
+    index_path = _index_path_for_root(root)
+    payload = _read_payload(index_path=index_path)
+    if payload is None:
+        return None
+
+    normalized_options = _normalize_options(options)
+    if payload.options is None or payload.options != normalized_options:
+        return None
+
+    current_root_fingerprint = compute_root_fingerprint(root)
+    if payload.root_fingerprint != current_root_fingerprint:
+        return None
+
+    try:
+        resolved_root = root.resolve(strict=False)
+    except OSError:
+        return None
+
+    matches: list[Path] = []
+    for raw_path in payload.paths:
+        path = Path(raw_path)
+        if _matches_indexed_path(
+            root=resolved_root,
+            path=path,
+            filters=filters,
+            follow_symlinks=normalized_options.follow_symlinks,
+        ):
+            matches.append(path)
+            if max_results and len(matches) >= max_results:
+                break
+    return matches
+
+
 def clear_index(*, root: Path) -> IndexClearResult:
     """Remove the index file for root."""
     index_path = _index_path_for_root(root)
@@ -129,11 +177,80 @@ def clear_index(*, root: Path) -> IndexClearResult:
     return IndexClearResult(root=root, index_path=index_path, cleared=cleared)
 
 
+def _normalize_options(options: IndexOptions) -> IndexOptions:
+    return IndexOptions(
+        respect_ignore_files=options.respect_ignore_files,
+        follow_symlinks=options.follow_symlinks,
+        exclude_binary_files=options.exclude_binary_files,
+        traversal_workers=max(1, options.traversal_workers),
+    )
+
+
 def _assert_root_is_directory(root: Path) -> None:
     if not root.exists():
         raise FileNotFoundError(str(root))
     if not root.is_dir():
         raise NotADirectoryError(str(root))
+
+
+def _serialize_options(options: IndexOptions) -> dict[str, object]:
+    return {
+        "respect_ignore_files": options.respect_ignore_files,
+        "follow_symlinks": options.follow_symlinks,
+        "exclude_binary_files": options.exclude_binary_files,
+        "traversal_workers": options.traversal_workers,
+    }
+
+
+def _supports_index_query(filters: SearchFilters) -> bool:
+    return filters.type == "file"
+
+
+def _matches_indexed_path(
+    *,
+    root: Path,
+    path: Path,
+    filters: SearchFilters,
+    follow_symlinks: bool,
+) -> bool:
+    try:
+        resolved_path = path.resolve(strict=False)
+    except OSError:
+        return False
+    if resolved_path != root and root not in resolved_path.parents:
+        return False
+
+    try:
+        is_link = path.is_symlink()
+        entry_stat = path.stat(follow_symlinks=follow_symlinks)
+        is_dir = stat.S_ISDIR(entry_stat.st_mode)
+        is_file = stat.S_ISREG(entry_stat.st_mode)
+    except OSError:
+        return False
+
+    if not filters.matches_type(is_file=is_file, is_dir=is_dir, is_link=is_link):
+        return False
+
+    try:
+        relative_path = path.relative_to(root)
+    except ValueError:
+        return False
+    depth = len(relative_path.parts) - 1
+    if not filters.matches_depth(depth):
+        return False
+
+    if not filters.matches_name(path.name):
+        return False
+    if not filters.matches_path(str(path)):
+        return False
+
+    if not filters.matches_stat(entry_stat):
+        return False
+
+    if filters.has and not filters.matches_content(path, follow_symlinks=follow_symlinks):
+        return False
+
+    return True
 
 
 def _collect_file_paths(*, root: Path, options: IndexOptions) -> list[str]:
@@ -166,12 +283,49 @@ def _read_payload(*, index_path: Path) -> _StoredIndexPayload | None:
     if payload.get("version") != INDEX_VERSION:
         return None
     root_fingerprint = payload.get("root_fingerprint")
+    raw_options = payload.get("options")
     raw_paths = payload.get("paths")
     if not isinstance(root_fingerprint, str):
         return None
+    options: IndexOptions | None
+    if raw_options is None:
+        options = None
+    else:
+        options = _parse_options(raw_options)
+        if options is None:
+            return None
     if not isinstance(raw_paths, list) or not all(isinstance(path, str) for path in raw_paths):
         return None
-    return _StoredIndexPayload(root_fingerprint=root_fingerprint, paths=tuple(raw_paths))
+    return _StoredIndexPayload(
+        root_fingerprint=root_fingerprint,
+        paths=tuple(raw_paths),
+        options=options,
+    )
+
+
+def _parse_options(raw_options: object) -> IndexOptions | None:
+    if not isinstance(raw_options, dict):
+        return None
+    respect_ignore_files = raw_options.get("respect_ignore_files")
+    follow_symlinks = raw_options.get("follow_symlinks")
+    exclude_binary_files = raw_options.get("exclude_binary_files")
+    traversal_workers = raw_options.get("traversal_workers")
+    if not isinstance(respect_ignore_files, bool):
+        return None
+    if not isinstance(follow_symlinks, bool):
+        return None
+    if not isinstance(exclude_binary_files, bool):
+        return None
+    if not isinstance(traversal_workers, int) or isinstance(traversal_workers, bool):
+        return None
+    return _normalize_options(
+        IndexOptions(
+            respect_ignore_files=respect_ignore_files,
+            follow_symlinks=follow_symlinks,
+            exclude_binary_files=exclude_binary_files,
+            traversal_workers=traversal_workers,
+        )
+    )
 
 
 def _write_payload(*, index_path: Path, payload: dict[str, object]) -> None:

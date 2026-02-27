@@ -12,6 +12,7 @@ from askfind.search.index import (
     build_index,
     clear_index,
     get_index_status,
+    query_index,
     update_index,
 )
 
@@ -30,4 +31,5 @@ __all__ = [
     "update_index",
     "get_index_status",
     "clear_index",
+    "query_index",
 ]

@@ -14,7 +14,7 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 🧪 **Binary File Exclusion** - Binary files are excluded by default (override with `--include-binary`)
 - 💾 **Search Cache** - Reuses recent query results (disable per run with `--no-cache`, inspect with `--cache-stats`)
 - 🗂️ **Index Management** - Build/update/status/clear optional per-root file indexes
-- 🧠 **LLM Filter Memoization** - Reuses repeated filter-extraction calls per process
+- 🧠 **LLM Filter Memoization** - Reuses repeated filter-extraction calls (in-memory + disk cache)
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
 - 🔐 **Secure Secrets** - Keychain-first API key storage (macOS Keychain, Linux Secret Service, Windows Credential Manager)
 - 📋 **Multiple Output Formats** - Plain, verbose, or JSON output for scripting
@@ -152,7 +152,8 @@ askfind config models
 3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance
 
 4. **Optional Index Management**: Use `askfind index` commands to precompute and manage
-   per-root file path indexes for large repositories.
+   per-root file path indexes for large repositories. When present and fresh, search
+   execution attempts index query first, then falls back to live traversal if needed.
 
 ## Filter Schema
 
