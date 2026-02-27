@@ -96,3 +96,111 @@ def test_cache_stats_track_hits_misses_and_sets(tmp_path):
     cache.get(key="k1", root_fingerprint="fp")
 
     assert cache.stats() == {"hits": 1, "misses": 1, "sets": 1}
+
+
+def test_compute_root_fingerprint_missing_root_returns_digest():
+    missing_root = Path("/definitely/missing/askfind-root")
+    digest = compute_root_fingerprint(missing_root)
+
+    assert isinstance(digest, str)
+    assert len(digest) == 64
+
+
+def test_compute_root_fingerprint_scandir_error_returns_digest(tmp_path):
+    regular_file = tmp_path / "not_a_directory.txt"
+    regular_file.write_text("x")
+
+    digest = compute_root_fingerprint(regular_file)
+
+    assert isinstance(digest, str)
+    assert len(digest) == 64
+
+
+def test_load_entries_rejects_non_dict_payload(tmp_path):
+    cache_file = tmp_path / "cache.json"
+    cache_file.write_text('["not-a-dict"]', encoding="utf-8")
+
+    cache = SearchCache(cache_path=cache_file)
+
+    assert cache._load_entries() == {}
+
+
+def test_load_entries_rejects_wrong_version(tmp_path):
+    cache_file = tmp_path / "cache.json"
+    cache_file.write_text('{"version": 999, "entries": {}}', encoding="utf-8")
+
+    cache = SearchCache(cache_path=cache_file)
+
+    assert cache._load_entries() == {}
+
+
+def test_load_entries_rejects_non_dict_entries(tmp_path):
+    cache_file = tmp_path / "cache.json"
+    cache_file.write_text('{"version": 1, "entries": []}', encoding="utf-8")
+
+    cache = SearchCache(cache_path=cache_file)
+
+    assert cache._load_entries() == {}
+
+
+def test_load_entries_skips_non_dict_entry_value(tmp_path):
+    cache_file = tmp_path / "cache.json"
+    cache_file.write_text('{"version": 1, "entries": {"k1": []}}', encoding="utf-8")
+
+    cache = SearchCache(cache_path=cache_file)
+
+    assert cache._load_entries() == {}
+
+
+def test_get_miss_on_invalid_paths_shape_increments_miss(tmp_path):
+    cache = SearchCache(cache_path=tmp_path / "cache.json")
+    cache._load_entries = lambda: {"k1": {"created_at": 1.0, "root_fingerprint": "fp", "paths": "bad"}}  # type: ignore[method-assign]
+    cache._prune = lambda entries, now: True  # type: ignore[method-assign]
+    save_calls: list[dict[str, object]] = []
+    cache._save_entries = lambda entries: save_calls.append(dict(entries))  # type: ignore[method-assign]
+
+    assert cache.get(key="k1", root_fingerprint="fp") is None
+    assert cache.stats()["misses"] == 1
+    assert len(save_calls) == 1
+
+
+def test_get_miss_on_fingerprint_mismatch_saves_when_pruned(tmp_path):
+    cache = SearchCache(cache_path=tmp_path / "cache.json")
+    cache._load_entries = lambda: {"k1": {"created_at": 1.0, "root_fingerprint": "old", "paths": []}}  # type: ignore[method-assign]
+    cache._prune = lambda entries, now: True  # type: ignore[method-assign]
+    saved = {"count": 0}
+    cache._save_entries = lambda entries: saved.__setitem__("count", saved["count"] + 1)  # type: ignore[method-assign]
+
+    assert cache.get(key="k1", root_fingerprint="new") is None
+    assert saved["count"] == 1
+
+
+def test_get_hit_saves_when_pruned(tmp_path):
+    cache = SearchCache(cache_path=tmp_path / "cache.json")
+    file_a = tmp_path / "a.py"
+    file_a.write_text("x")
+    cache._load_entries = lambda: {  # type: ignore[method-assign]
+        "k1": {"created_at": 1.0, "root_fingerprint": "fp", "paths": [str(file_a)]}
+    }
+    cache._prune = lambda entries, now: True  # type: ignore[method-assign]
+    saved = {"count": 0}
+    cache._save_entries = lambda entries: saved.__setitem__("count", saved["count"] + 1)  # type: ignore[method-assign]
+
+    assert cache.get(key="k1", root_fingerprint="fp") == [file_a]
+    assert saved["count"] == 1
+
+
+def test_prune_drops_invalid_created_at_and_enforces_max_entries(tmp_path):
+    cache = SearchCache(cache_path=tmp_path / "cache.json", ttl_seconds=100, max_entries=1)
+    entries: dict[str, dict[str, object]] = {
+        "invalid": {"created_at": "bad"},
+        "old": {"created_at": 1.0},
+        "new": {"created_at": 2.0},
+    }
+
+    changed = cache._prune(entries, now=2.0)
+
+    assert changed is True
+    assert "invalid" not in entries
+    assert "old" not in entries
+    assert "new" in entries
