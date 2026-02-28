@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.10] - 2026-02-28
+
+### Added
+- Added archive content matching support (stage 2) for `--search-archives`:
+  - `.zip` and `.tar.gz` entries can now satisfy `has` content filters.
+  - archive-member checks stream content with existing content-scan size limits.
+- Added walker tests covering archive `has` matching and member-name/content combinations.
+
+### Changed
+- Refined archive traversal decisions in walker:
+  - archive-member scans are now triggered for `has` queries and for non-direct path/name matches.
+- Updated package version metadata to `0.1.10`.
+
 ## [0.1.9] - 2026-02-27
 
 ### Added

@@ -547,6 +547,135 @@ class TestWalkAndFilter:
 
         assert archive not in results
 
+    def test_search_archives_zip_matches_inner_content_filter(self, tmp_path):
+        archive = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("src/", "")
+            zf.writestr("src/in_archive.py", "# TODO: implement\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", has=["TODO"]),
+                search_archives=True,
+            )
+        )
+
+        assert archive in results
+
+    def test_search_archives_disabled_does_not_match_inner_content_filter(self, tmp_path):
+        archive = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("src/in_archive.py", "# TODO: implement\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", has=["TODO"]),
+                search_archives=False,
+            )
+        )
+
+        assert archive not in results
+
+    def test_search_archives_has_filter_respects_inner_member_name_filters(self, tmp_path):
+        archive = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("docs/note.txt", "TOKEN")
+            zf.writestr("src/module.py", "print('ok')\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", ext=[".py"], has=["TOKEN"]),
+                search_archives=True,
+            )
+        )
+
+        assert archive not in results
+
+    def test_search_archives_tar_gz_matches_inner_content_filter(self, tmp_path):
+        archive = tmp_path / "bundle.tar.gz"
+        inner_file = tmp_path / "inner_token.py"
+        inner_file.write_text("# TODO: inside tar\n")
+        with tarfile.open(archive, "w:gz") as tar:
+            dir_info = tarfile.TarInfo("pkg")
+            dir_info.type = tarfile.DIRTYPE
+            tar.addfile(dir_info)
+            tar.add(inner_file, arcname="pkg/inner_token.py")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", has=["TODO"]),
+                search_archives=True,
+            )
+        )
+
+        assert archive in results
+
+    def test_search_archives_zip_content_filter_skips_oversized_members(self, tmp_path, monkeypatch):
+        archive = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("pkg/huge.txt", "AB")
+        monkeypatch.setattr(walker, "MAX_CONTENT_SCAN_BYTES", 1)
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", has=["A"]),
+                search_archives=True,
+            )
+        )
+
+        assert archive not in results
+
+    def test_search_archives_tar_gz_content_filter_skips_oversized_members(self, tmp_path, monkeypatch):
+        archive = tmp_path / "bundle.tar.gz"
+        inner_file = tmp_path / "inner_large.txt"
+        inner_file.write_text("AB")
+        with tarfile.open(archive, "w:gz") as tar:
+            tar.add(inner_file, arcname="pkg/inner_large.txt")
+        monkeypatch.setattr(walker, "MAX_CONTENT_SCAN_BYTES", 1)
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", has=["A"]),
+                search_archives=True,
+            )
+        )
+
+        assert archive not in results
+
+    def test_search_archives_skips_corrupt_zip_for_content_filter(self, tmp_path):
+        archive = tmp_path / "broken.zip"
+        archive.write_text("not a real zip")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", has=["TODO"]),
+                search_archives=True,
+            )
+        )
+
+        assert archive not in results
+
+    def test_search_archives_skips_corrupt_tar_gz_for_content_filter(self, tmp_path):
+        archive = tmp_path / "broken.tar.gz"
+        archive.write_text("not a real tar")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", has=["TODO"]),
+                search_archives=True,
+            )
+        )
+
+        assert archive not in results
+
     def test_max_results_stops_scandir_iteration_early_sequential(self, tmp_path, monkeypatch):
         for idx in range(10):
             (tmp_path / f"file_{idx}.txt").write_text("text")

@@ -2,6 +2,7 @@
 
 import json
 import types
+import zipfile
 import httpx
 from unittest.mock import MagicMock, patch
 
@@ -203,6 +204,66 @@ class TestMainIntegration:
         result = main(["python files", "--root", str(tmp_path)])
         assert result == 0
         mock_client.extract_filters.assert_called_once_with("python files")
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode_search_archives_has_matches_zip_content(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        archive = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("src/in_archive.py", "# TODO: from archive\n")
+
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        mock_client = _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"type": "file", "has": ["TODO"]}',
+        )
+
+        result = main(
+            [
+                "todo in archives",
+                "--search-archives",
+                "--root",
+                str(tmp_path),
+                "--no-rerank",
+                "--no-cache",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(archive) in captured.out
+        mock_client.extract_filters.assert_called_once_with("todo in archives")
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode_has_query_without_search_archives_returns_no_match(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path
+    ):
+        archive = tmp_path / "bundle.zip"
+        with zipfile.ZipFile(archive, "w") as zf:
+            zf.writestr("src/in_archive.py", "# TODO: from archive\n")
+
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"type": "file", "has": ["TODO"]}',
+        )
+
+        result = main(
+            [
+                "todo in archives",
+                "--root",
+                str(tmp_path),
+                "--no-rerank",
+                "--no-cache",
+            ]
+        )
+
+        assert result == 1
 
     @patch("askfind.cli.walk_and_filter")
     @patch("askfind.cli.LLMClient")
