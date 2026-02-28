@@ -1,6 +1,7 @@
 """Tests for filesystem walker."""
 
 from pathlib import Path
+import plistlib
 import tarfile
 import zipfile
 
@@ -675,6 +676,30 @@ class TestWalkAndFilter:
         )
 
         assert archive not in results
+
+    def test_tag_filter_matches_files_with_macos_tags(self, tmp_path, monkeypatch):
+        tagged = tmp_path / "tagged.txt"
+        tagged.write_text("a")
+        plain = tmp_path / "plain.txt"
+        plain.write_text("b")
+        tagged_payload = plistlib.dumps(["ProjectX\n6"])
+
+        def fake_getxattr(path, name, *, follow_symlinks=True):
+            if Path(path) == tagged and name == "com.apple.metadata:_kMDItemUserTags":
+                return tagged_payload
+            raise OSError("xattr not found")
+
+        monkeypatch.setattr("askfind.search.filters.os.getxattr", fake_getxattr, raising=False)
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", tag=["ProjectX"]),
+            )
+        )
+
+        assert tagged in results
+        assert plain not in results
 
     def test_max_results_stops_scandir_iteration_early_sequential(self, tmp_path, monkeypatch):
         for idx in range(10):

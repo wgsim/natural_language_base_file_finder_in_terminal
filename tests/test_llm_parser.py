@@ -71,6 +71,16 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters.has == ["TODO", "FIXME"]
 
+    def test_tag_as_single_string_converted_to_list(self):
+        raw = '{"tag": "ProjectX"}'
+        filters = parse_llm_response(raw)
+        assert filters.tag == ["ProjectX"]
+
+    def test_tag_as_list(self):
+        raw = '{"tag": ["ProjectX", "Urgent"]}'
+        filters = parse_llm_response(raw)
+        assert filters.tag == ["ProjectX", "Urgent"]
+
     def test_ext_as_single_string_converted_to_list(self):
         raw = '{"ext": ".py"}'
         filters = parse_llm_response(raw)

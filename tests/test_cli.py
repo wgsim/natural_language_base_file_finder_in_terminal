@@ -1,6 +1,8 @@
 """Tests for CLI argument parsing and entry point."""
 
 import json
+from pathlib import Path
+import plistlib
 import types
 import zipfile
 import httpx
@@ -264,6 +266,46 @@ class TestMainIntegration:
         )
 
         assert result == 1
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode_tag_filter_matches_macos_tagged_file(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, monkeypatch, capsys
+    ):
+        tagged = tmp_path / "tagged.txt"
+        tagged.write_text("x")
+        plain = tmp_path / "plain.txt"
+        plain.write_text("y")
+        tag_payload = plistlib.dumps(["ProjectX\n6"])
+
+        def fake_getxattr(path, name, *, follow_symlinks=True):
+            if Path(path) == tagged and name == "com.apple.metadata:_kMDItemUserTags":
+                return tag_payload
+            raise OSError("xattr not found")
+
+        monkeypatch.setattr("askfind.search.filters.os.getxattr", fake_getxattr, raising=False)
+
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"type":"file","tag":["ProjectX"]}',
+        )
+
+        result = main(
+            [
+                "projectx tag files",
+                "--root",
+                str(tmp_path),
+                "--no-rerank",
+                "--no-cache",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(tagged) in captured.out
+        assert str(plain) not in captured.out
 
     @patch("askfind.cli.walk_and_filter")
     @patch("askfind.cli.LLMClient")

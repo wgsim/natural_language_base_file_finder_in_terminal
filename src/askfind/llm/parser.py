@@ -11,7 +11,7 @@ from typing import Any
 
 from askfind.search.filters import SearchFilters, parse_mod_datetime, parse_size, parse_time_delta
 
-_LIST_FIELDS = {"ext", "not_ext", "has"}
+_LIST_FIELDS = {"ext", "not_ext", "has", "tag"}
 _MAX_LIST_LENGTH = 20  # Maximum items in list fields
 _MAX_TERM_LENGTH = 200  # Maximum length of individual terms
 _VALID_TYPE_VALUES = {"file", "dir", "link"}

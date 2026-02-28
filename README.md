@@ -178,6 +178,7 @@ askfind understands these filter types:
 | `mod_before` | `2026-01-15` | Modified up to absolute date (inclusive for date-only) |
 | `size` | `>1MB` | File size constraint |
 | `has` | `["TODO"]` | File content must contain terms |
+| `tag` | `["ProjectX"]` | macOS Finder tags that must all be present |
 | `type` | `file`, `dir` | Entry type |
 | `depth` | `<5` | Directory depth limit |
 

@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.10** (Current) - Archive stage 2 (`has` content matching inside `.zip`/`.tar.gz`) and walker archive scan refactor
+- **v0.1.11** (Current) - macOS Finder tag filtering (`tag`) and metadata-path parity in traversal/index query
+- **v0.1.10** - Archive stage 2 (`has` content matching inside `.zip`/`.tar.gz`) and walker archive scan refactor
 - **v0.1.9** - Incremental early termination, index runtime stats, and script lint gate
 - **v0.1.8** - Runtime index query path and persistent LLM memoization
 - **v0.1.7** - Index commands, LLM memoization, and CI perf regression gate
@@ -33,7 +34,7 @@
 - [x] Git-aware searching (`.gitignore` support during traversal)
 - [x] Support for `.askfindignore` files during traversal
 - [x] Symbolic link following options (`--follow-symlinks`, root-bounded)
-- [ ] Extended attribute filtering (macOS tags, file labels)
+- [x] Extended attribute filtering (macOS tags, file labels)
 - [x] Binary file detection and exclusion (default on, `--include-binary` to override)
 - [x] Archive file support (stage 2: search by entry path/name and `has` content inside .zip, .tar.gz)
 
@@ -189,7 +190,7 @@
 
 ## Known Limitations
 
-### Current v0.1.10 Limitations
+### Current v0.1.11 Limitations
 
 1. **LLM Dependency**: Requires internet connection and API key
    - *Future*: Offline mode with rule-based fallback

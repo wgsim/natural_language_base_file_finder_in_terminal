@@ -429,6 +429,12 @@ def _scan_directory(
                 schedule_recursion(is_dir, entry_path, depth)
                 continue
 
+            if is_file and not filters.matches_tags(
+                entry_path,
+                follow_symlinks=follow_symlinks,
+            ):
+                continue
+
             if exclude_binary_files and is_file and _is_binary_file(entry_path) and not archive_match:
                 continue
 
