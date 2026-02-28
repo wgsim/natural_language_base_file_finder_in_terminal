@@ -81,6 +81,16 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters.tag == ["ProjectX", "Urgent"]
 
+    def test_lang_as_single_string_converted_to_list(self):
+        raw = '{"lang": "python"}'
+        filters = parse_llm_response(raw)
+        assert filters.lang == ["python"]
+
+    def test_license_as_single_string_converted_to_list(self):
+        raw = '{"license": "mit"}'
+        filters = parse_llm_response(raw)
+        assert filters.license == ["mit"]
+
     def test_ext_as_single_string_converted_to_list(self):
         raw = '{"ext": ".py"}'
         filters = parse_llm_response(raw)
@@ -175,6 +185,14 @@ class TestParseLlmResponse:
         assert filters.mod is None
         assert filters.mod_after is None
         assert filters.mod_before is None
+
+    def test_rejects_non_list_lang_and_license_types(self):
+        raw = '{"lang": 1, "not_lang": 2, "license": 3, "not_license": 4}'
+        filters = parse_llm_response(raw)
+        assert filters.lang is None
+        assert filters.not_lang is None
+        assert filters.license is None
+        assert filters.not_license is None
 
     def test_rejects_invalid_permission_values(self):
         raw = '{"perm": "rwa"}'

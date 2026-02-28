@@ -14,6 +14,87 @@ from pathlib import Path
 MAX_CONTENT_SCAN_BYTES = 10 * 1024 * 1024
 CONTENT_SCAN_CHUNK_BYTES = 64 * 1024
 MACOS_TAG_XATTR = "com.apple.metadata:_kMDItemUserTags"
+SHEBANG_PROBE_BYTES = 512
+LICENSE_SCAN_BYTES = 128 * 1024
+
+_LANGUAGE_BY_EXTENSION = {
+    ".py": "python",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".java": "java",
+    ".go": "go",
+    ".rs": "rust",
+    ".c": "c",
+    ".h": "c",
+    ".cc": "cpp",
+    ".cpp": "cpp",
+    ".cxx": "cpp",
+    ".hpp": "cpp",
+    ".cs": "csharp",
+    ".rb": "ruby",
+    ".php": "php",
+    ".swift": "swift",
+    ".kt": "kotlin",
+    ".kts": "kotlin",
+    ".sh": "shell",
+    ".bash": "shell",
+    ".zsh": "shell",
+    ".ps1": "powershell",
+    ".sql": "sql",
+    ".html": "html",
+    ".css": "css",
+    ".json": "json",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".toml": "toml",
+    ".md": "markdown",
+    ".xml": "xml",
+}
+
+_LANGUAGE_ALIASES = {
+    "py": "python",
+    "python3": "python",
+    "js": "javascript",
+    "ts": "typescript",
+    "bash": "shell",
+    "sh": "shell",
+    "zsh": "shell",
+    "c#": "csharp",
+    "cs": "csharp",
+    "objc": "objective-c",
+    "objectivec": "objective-c",
+    "md": "markdown",
+}
+
+_LICENSE_ALIASES = {
+    "mit": "mit",
+    "apache": "apache-2.0",
+    "apache2": "apache-2.0",
+    "apache-2.0": "apache-2.0",
+    "apache 2.0": "apache-2.0",
+    "gpl": "gpl-3.0",
+    "gplv3": "gpl-3.0",
+    "gpl-3.0": "gpl-3.0",
+    "gpl3": "gpl-3.0",
+    "gplv2": "gpl-2.0",
+    "gpl-2.0": "gpl-2.0",
+    "gpl2": "gpl-2.0",
+    "bsd-3-clause": "bsd-3-clause",
+    "bsd3": "bsd-3-clause",
+    "bsd-2-clause": "bsd-2-clause",
+    "bsd2": "bsd-2-clause",
+    "mpl-2.0": "mpl-2.0",
+    "mpl2": "mpl-2.0",
+    "isc": "isc",
+    "unlicense": "unlicense",
+}
+
+_SPDX_LICENSE_PATTERN = re.compile(
+    r"SPDX-License-Identifier:\s*([A-Za-z0-9\.\-\+]+)",
+    re.IGNORECASE,
+)
 
 
 def parse_size(s: str) -> int:
@@ -136,6 +217,97 @@ def _read_user_tags_xattr(filepath: Path, *, follow_symlinks: bool) -> set[str]:
     return _decode_macos_tags(raw)
 
 
+def _normalize_language_name(value: str) -> str:
+    normalized = value.strip().casefold()
+    if not normalized:
+        return ""
+    return _LANGUAGE_ALIASES.get(normalized, normalized)
+
+
+def _normalize_license_name(value: str) -> str:
+    normalized = value.strip().casefold()
+    if not normalized:
+        return ""
+    return _LICENSE_ALIASES.get(normalized, normalized)
+
+
+def _detect_language_from_shebang(filepath: Path) -> str | None:
+    try:
+        with filepath.open("rb") as handle:
+            first_line = handle.read(SHEBANG_PROBE_BYTES).splitlines()[0:1]
+    except (OSError, IndexError):
+        return None
+    if not first_line:
+        return None
+    shebang = first_line[0].decode("utf-8", errors="ignore").casefold()
+    if not shebang.startswith("#!"):
+        return None
+    if "python" in shebang:
+        return "python"
+    if "node" in shebang or "deno" in shebang:
+        return "javascript"
+    if "bash" in shebang or "sh" in shebang or "zsh" in shebang:
+        return "shell"
+    if "ruby" in shebang:
+        return "ruby"
+    if "perl" in shebang:
+        return "perl"
+    if "php" in shebang:
+        return "php"
+    return None
+
+
+def _detect_language(filepath: Path) -> str | None:
+    language_by_ext = _LANGUAGE_BY_EXTENSION.get(filepath.suffix.casefold())
+    if language_by_ext is not None:
+        return language_by_ext
+    return _detect_language_from_shebang(filepath)
+
+
+def _read_text_sample(filepath: Path, *, max_bytes: int) -> str | None:
+    try:
+        with filepath.open("rb") as handle:
+            payload = handle.read(max_bytes)
+    except OSError:
+        return None
+    if not payload:
+        return None
+    return payload.decode("utf-8", errors="ignore")
+
+
+def _detect_license(filepath: Path) -> str | None:
+    sample = _read_text_sample(filepath, max_bytes=LICENSE_SCAN_BYTES)
+    if not sample:
+        return None
+    spdx_match = _SPDX_LICENSE_PATTERN.search(sample)
+    if spdx_match:
+        return _normalize_license_name(spdx_match.group(1))
+
+    lowered = sample.casefold()
+    if "permission is hereby granted, free of charge" in lowered:
+        return "mit"
+    if "apache license" in lowered and "version 2.0" in lowered:
+        return "apache-2.0"
+    if "gnu general public license" in lowered and "version 3" in lowered:
+        return "gpl-3.0"
+    if "gnu general public license" in lowered and "version 2" in lowered:
+        return "gpl-2.0"
+    if "mozilla public license" in lowered and "2.0" in lowered:
+        return "mpl-2.0"
+    if "the unlicense" in lowered:
+        return "unlicense"
+    if (
+        "permission to use, copy, modify, and/or distribute this software for any purpose"
+        in lowered
+    ):
+        return "isc"
+    if "redistribution and use in source and binary forms" in lowered:
+        if "neither the name" in lowered:
+            return "bsd-3-clause"
+        return "bsd-2-clause"
+    return None
+
+
 @dataclass
 class SearchFilters:
     """Search filters extracted from natural language queries.
@@ -150,6 +322,8 @@ class SearchFilters:
     - mod_after, mod_before: Absolute modification date range constraints
     - size: File size constraints
     - has: Content matching (all terms must be present)
+    - lang, not_lang: Programming language filtering
+    - license, not_license: License identifier filtering
     - tag: macOS Finder tags attached to files (all tags must be present)
     - type: File type (file, dir, link)
     - depth: Directory depth constraints
@@ -176,6 +350,10 @@ class SearchFilters:
     mod_before: str | None = None
     size: str | None = None
     has: list[str] | None = None
+    lang: list[str] | None = None
+    not_lang: list[str] | None = None
+    license: list[str] | None = None
+    not_license: list[str] | None = None
     tag: list[str] | None = None
     type: str | None = None
     depth: str | None = None
@@ -183,6 +361,10 @@ class SearchFilters:
     _compiled_regex: re.Pattern[str] | None = field(default=None, init=False, repr=False)
     _ext_lower: frozenset[str] | None = field(default=None, init=False, repr=False)
     _not_ext_lower: frozenset[str] | None = field(default=None, init=False, repr=False)
+    _lang_normalized: frozenset[str] | None = field(default=None, init=False, repr=False)
+    _not_lang_normalized: frozenset[str] | None = field(default=None, init=False, repr=False)
+    _license_normalized: frozenset[str] | None = field(default=None, init=False, repr=False)
+    _not_license_normalized: frozenset[str] | None = field(default=None, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Pre-compile regex and normalize extension sets for performance and safety."""
@@ -200,6 +382,26 @@ class SearchFilters:
             self._ext_lower = frozenset(e.lower() for e in self.ext)
         if self.not_ext:
             self._not_ext_lower = frozenset(e.lower() for e in self.not_ext)
+        if self.lang:
+            self._lang_normalized = frozenset(
+                normalized for value in self.lang if (normalized := _normalize_language_name(value))
+            )
+        if self.not_lang:
+            self._not_lang_normalized = frozenset(
+                normalized
+                for value in self.not_lang
+                if (normalized := _normalize_language_name(value))
+            )
+        if self.license:
+            self._license_normalized = frozenset(
+                normalized for value in self.license if (normalized := _normalize_license_name(value))
+            )
+        if self.not_license:
+            self._not_license_normalized = frozenset(
+                normalized
+                for value in self.not_license
+                if (normalized := _normalize_license_name(value))
+            )
 
     def matches_name(self, filename: str) -> bool:
         # Use pre-computed extension sets for better performance
@@ -337,6 +539,40 @@ class SearchFilters:
         if not present_tags:
             return False
         return requested.issubset(present_tags)
+
+    def matches_language(self, filepath: Path, *, follow_symlinks: bool = False) -> bool:
+        if self._lang_normalized is None and self._not_lang_normalized is None:
+            return True
+        try:
+            if filepath.is_symlink() and not follow_symlinks:
+                return False if self._lang_normalized is not None else True
+        except OSError:
+            return False if self._lang_normalized is not None else True
+
+        detected = _detect_language(filepath)
+        if self._lang_normalized is not None:
+            if detected is None or detected not in self._lang_normalized:
+                return False
+        if self._not_lang_normalized is not None and detected in self._not_lang_normalized:
+            return False
+        return True
+
+    def matches_license(self, filepath: Path, *, follow_symlinks: bool = False) -> bool:
+        if self._license_normalized is None and self._not_license_normalized is None:
+            return True
+        try:
+            if filepath.is_symlink() and not follow_symlinks:
+                return False if self._license_normalized is not None else True
+        except OSError:
+            return False if self._license_normalized is not None else True
+
+        detected = _detect_license(filepath)
+        if self._license_normalized is not None:
+            if detected is None or detected not in self._license_normalized:
+                return False
+        if self._not_license_normalized is not None and detected in self._not_license_normalized:
+            return False
+        return True
 
 
 def _fuzzy_match(pattern: str, text: str) -> bool:

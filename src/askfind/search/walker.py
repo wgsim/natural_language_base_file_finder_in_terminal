@@ -438,6 +438,18 @@ def _scan_directory(
             if exclude_binary_files and is_file and _is_binary_file(entry_path) and not archive_match:
                 continue
 
+            if is_file and not filters.matches_language(
+                entry_path,
+                follow_symlinks=follow_symlinks,
+            ):
+                continue
+
+            if is_file and not filters.matches_license(
+                entry_path,
+                follow_symlinks=follow_symlinks,
+            ):
+                continue
+
             # Tier 3: content checks (most expensive, files only)
             if filters.has:  # Content filter exists
                 if is_file:

@@ -307,6 +307,70 @@ class TestMainIntegration:
         assert str(tagged) in captured.out
         assert str(plain) not in captured.out
 
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode_lang_filter_matches_detected_language(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        py_file = tmp_path / "app.py"
+        py_file.write_text("print('ok')\n")
+        js_file = tmp_path / "app.js"
+        js_file.write_text("console.log('ok')\n")
+
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"type":"file","lang":["python"]}',
+        )
+
+        result = main(
+            [
+                "python language files",
+                "--root",
+                str(tmp_path),
+                "--no-rerank",
+                "--no-cache",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(py_file) in captured.out
+        assert str(js_file) not in captured.out
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode_license_filter_matches_detected_license(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        mit_file = tmp_path / "mit.py"
+        mit_file.write_text("# SPDX-License-Identifier: MIT\nprint('ok')\n")
+        apache_file = tmp_path / "apache.py"
+        apache_file.write_text("# SPDX-License-Identifier: Apache-2.0\nprint('ok')\n")
+
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"type":"file","license":["mit"]}',
+        )
+
+        result = main(
+            [
+                "mit licensed files",
+                "--root",
+                str(tmp_path),
+                "--no-rerank",
+                "--no-cache",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(mit_file) in captured.out
+        assert str(apache_file) not in captured.out
+
     @patch("askfind.cli.walk_and_filter")
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")

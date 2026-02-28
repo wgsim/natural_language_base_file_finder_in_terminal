@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.11** (Current) - macOS Finder tag filtering (`tag`) and metadata-path parity in traversal/index query
+- **v0.1.12** (Current) - language/license filters (`lang`, `license`) across traversal/index query with CLI/LLM parser support
+- **v0.1.11** - macOS Finder tag filtering (`tag`) and metadata-path parity in traversal/index query
 - **v0.1.10** - Archive stage 2 (`has` content matching inside `.zip`/`.tar.gz`) and walker archive scan refactor
 - **v0.1.9** - Incremental early termination, index runtime stats, and script lint gate
 - **v0.1.8** - Runtime index query path and persistent LLM memoization
@@ -42,8 +43,8 @@
 - [x] Date range queries ("between Jan 1 and Jan 15")
 - [ ] File similarity search ("files similar to auth.py")
 - [ ] Code complexity filters (cyclomatic complexity, LOC)
-- [ ] Language detection and filtering
-- [ ] License detection and filtering
+- [x] Language detection and filtering
+- [x] License detection and filtering
 
 ### v0.3.0 - Advanced Features
 
@@ -190,7 +191,7 @@
 
 ## Known Limitations
 
-### Current v0.1.11 Limitations
+### Current v0.1.12 Limitations
 
 1. **LLM Dependency**: Requires internet connection and API key
    - *Future*: Offline mode with rule-based fallback

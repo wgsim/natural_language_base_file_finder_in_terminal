@@ -701,6 +701,38 @@ class TestWalkAndFilter:
         assert tagged in results
         assert plain not in results
 
+    def test_lang_filter_matches_detected_language(self, tmp_path):
+        py_file = tmp_path / "app.py"
+        py_file.write_text("print('ok')\n")
+        js_file = tmp_path / "app.js"
+        js_file.write_text("console.log('ok')\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", lang=["python"]),
+            )
+        )
+
+        assert py_file in results
+        assert js_file not in results
+
+    def test_license_filter_matches_detected_license(self, tmp_path):
+        mit_file = tmp_path / "mit.py"
+        mit_file.write_text("# SPDX-License-Identifier: MIT\nprint('ok')\n")
+        apache_file = tmp_path / "apache.py"
+        apache_file.write_text("# SPDX-License-Identifier: Apache-2.0\nprint('ok')\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", license=["mit"]),
+            )
+        )
+
+        assert mit_file in results
+        assert apache_file not in results
+
     def test_max_results_stops_scandir_iteration_early_sequential(self, tmp_path, monkeypatch):
         for idx in range(10):
             (tmp_path / f"file_{idx}.txt").write_text("text")
