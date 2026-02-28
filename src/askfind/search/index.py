@@ -280,6 +280,12 @@ def _matches_indexed_path(
     if is_file and not filters.matches_tags(path, follow_symlinks=follow_symlinks):
         return False
 
+    if is_file and not filters.matches_language(path, follow_symlinks=follow_symlinks):
+        return False
+
+    if is_file and not filters.matches_license(path, follow_symlinks=follow_symlinks):
+        return False
+
     if filters.has and not filters.matches_content(path, follow_symlinks=follow_symlinks):
         return False
 

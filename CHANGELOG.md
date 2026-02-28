@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.12] - 2026-02-28
+
+### Added
+- Added language filtering support via `lang` / `not_lang` query filters.
+- Added license filtering support via `license` / `not_license` query filters.
+- Added parser/prompt support and tests for language/license filters.
+
+### Changed
+- Search pipeline now applies language/license filters in both live traversal and index-query paths.
+- Updated package version metadata to `0.1.12`.
+
 ## [0.1.11] - 2026-02-28
 
 ### Added

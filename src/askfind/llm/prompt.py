@@ -19,6 +19,10 @@ FILTER_SCHEMA = """\
   "mod_before": "2026-01-15",  // modified before absolute date boundary (YYYY-MM-DD or ISO datetime)
   "size": ">1MB",        // size (KB, MB, GB)
   "has": ["TODO"],       // file content contains all terms
+  "lang": ["python"],    // language to include (e.g., python, javascript)
+  "not_lang": ["javascript"], // language to exclude
+  "license": ["mit"],    // license id(s) to include (e.g., mit, apache-2.0)
+  "not_license": ["gpl-3.0"], // license id(s) to exclude
   "tag": ["ProjectX"],   // macOS Finder tags (all tags must be present)
   "type": "file",        // file, dir, link
   "depth": "<5",         // directory depth
@@ -49,6 +53,8 @@ Rules:
 - For "this week" use ">7d". For "today" use ">1d". For "this month" use ">30d".
 - ext values must include the dot: ".py" not "py".
 - has accepts a list of strings that must ALL appear in the file content.
+- lang/not_lang accept language names (e.g., python, javascript, typescript, shell).
+- license/not_license accept normalized license ids (e.g., mit, apache-2.0, gpl-3.0).
 - tag accepts a list of macOS Finder tag names that must ALL be present.
 - Only include keys relevant to the query.\
 """

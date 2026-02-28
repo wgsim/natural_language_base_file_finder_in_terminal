@@ -6,6 +6,8 @@ import plistlib
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import askfind.search.filters as filters_module
+import pytest
 from askfind.search.filters import (
     MAX_CONTENT_SCAN_BYTES,
     SearchFilters,
@@ -312,3 +314,133 @@ class TestSearchFilters:
         filters = SearchFilters(tag=["ProjectX"])
         with patch("askfind.search.filters.os.getxattr", side_effect=OSError, create=True):
             assert filters.matches_tags(f) is False
+
+    def test_matches_language_detects_from_extension(self, tmp_path):
+        py_file = tmp_path / "app.py"
+        py_file.write_text("print('ok')\n")
+        assert SearchFilters(lang=["python"]).matches_language(py_file) is True
+        assert SearchFilters(lang=["javascript"]).matches_language(py_file) is False
+
+    def test_matches_language_detects_from_shebang(self, tmp_path):
+        script = tmp_path / "run"
+        script.write_text("#!/usr/bin/env python\nprint('ok')\n")
+        assert SearchFilters(lang=["python"]).matches_language(script) is True
+
+    def test_matches_language_supports_not_lang(self, tmp_path):
+        py_file = tmp_path / "app.py"
+        py_file.write_text("print('ok')\n")
+        assert SearchFilters(not_lang=["python"]).matches_language(py_file) is False
+        assert SearchFilters(not_lang=["javascript"]).matches_language(py_file) is True
+
+    def test_matches_license_detects_from_spdx_header(self, tmp_path):
+        file_path = tmp_path / "main.py"
+        file_path.write_text("# SPDX-License-Identifier: MIT\nprint('ok')\n")
+        assert SearchFilters(license=["mit"]).matches_license(file_path) is True
+        assert SearchFilters(license=["apache-2.0"]).matches_license(file_path) is False
+
+    def test_matches_license_supports_not_license(self, tmp_path):
+        file_path = tmp_path / "main.py"
+        file_path.write_text("# SPDX-License-Identifier: Apache-2.0\nprint('ok')\n")
+        assert SearchFilters(not_license=["apache-2.0"]).matches_license(file_path) is False
+        assert SearchFilters(not_license=["mit"]).matches_license(file_path) is True
+
+    def test_parse_mod_datetime_handles_z_suffix_and_space_separator(self):
+        zulu = parse_mod_datetime("2026-01-01T01:00:00Z")
+        spaced = parse_mod_datetime("2026-01-01 01:00:00+00:00")
+        assert zulu == datetime(2026, 1, 1, 1, 0, tzinfo=timezone.utc)
+        assert spaced == datetime(2026, 1, 1, 1, 0, tzinfo=timezone.utc)
+
+    def test_decode_macos_tags_handles_invalid_and_non_list_payloads(self):
+        assert filters_module._decode_macos_tags(b"not-plist") == set()
+        assert filters_module._decode_macos_tags(plistlib.dumps({"k": "v"})) == set()
+        assert filters_module._decode_macos_tags(plistlib.dumps([1, "Tag\n6"])) == {"tag"}
+
+    def test_read_user_tags_xattr_rejects_non_bytes_payload(self, tmp_path):
+        f = tmp_path / "note.txt"
+        f.write_text("x")
+        with patch("askfind.search.filters.os.getxattr", return_value="oops", create=True):
+            assert filters_module._read_user_tags_xattr(f, follow_symlinks=True) == set()
+
+    def test_normalize_language_and_license_empty_values(self):
+        assert filters_module._normalize_language_name("   ") == ""
+        assert filters_module._normalize_license_name("   ") == ""
+
+    def test_detect_language_from_various_shebangs(self, tmp_path):
+        node_script = tmp_path / "node_script"
+        node_script.write_text("#!/usr/bin/env node\n")
+        ruby_script = tmp_path / "ruby_script"
+        ruby_script.write_text("#!/usr/bin/env ruby\n")
+        perl_script = tmp_path / "perl_script"
+        perl_script.write_text("#!/usr/bin/env perl\n")
+        php_script = tmp_path / "php_script"
+        php_script.write_text("#!/usr/bin/env php\n")
+        plain_text = tmp_path / "plain_text"
+        plain_text.write_text("not shebang")
+        empty_file = tmp_path / "empty"
+        empty_file.write_text("")
+
+        assert filters_module._detect_language_from_shebang(node_script) == "javascript"
+        assert filters_module._detect_language_from_shebang(ruby_script) == "ruby"
+        assert filters_module._detect_language_from_shebang(perl_script) == "perl"
+        assert filters_module._detect_language_from_shebang(php_script) == "php"
+        assert filters_module._detect_language_from_shebang(plain_text) is None
+        assert filters_module._detect_language_from_shebang(empty_file) is None
+
+    def test_read_text_sample_handles_oserror_and_empty_file(self, tmp_path):
+        empty_file = tmp_path / "empty.txt"
+        empty_file.write_text("")
+        assert filters_module._read_text_sample(empty_file, max_bytes=128) is None
+        with patch("pathlib.Path.open", side_effect=OSError):
+            assert filters_module._read_text_sample(empty_file, max_bytes=128) is None
+
+    def test_detect_license_heuristics_cover_common_branches(self, tmp_path):
+        samples = {
+            "mit.txt": "Permission is hereby granted, free of charge, to any person obtaining a copy.",
+            "apache.txt": "Apache License\nVersion 2.0, January 2004",
+            "gpl3.txt": "GNU GENERAL PUBLIC LICENSE\nVersion 3, 29 June 2007",
+            "gpl2.txt": "GNU GENERAL PUBLIC LICENSE\nVersion 2, June 1991",
+            "mpl.txt": "Mozilla Public License Version 2.0",
+            "unlicense.txt": "This is free and unencumbered software released into the public domain.\nThe Unlicense",
+            "isc.txt": "Permission to use, copy, modify, and/or distribute this software for any purpose with or without fee is hereby granted.",
+            "bsd3.txt": "Redistribution and use in source and binary forms...\nNeither the name of the project nor contributors may be used.",
+            "bsd2.txt": "Redistribution and use in source and binary forms...",
+        }
+        expected = {
+            "mit.txt": "mit",
+            "apache.txt": "apache-2.0",
+            "gpl3.txt": "gpl-3.0",
+            "gpl2.txt": "gpl-2.0",
+            "mpl.txt": "mpl-2.0",
+            "unlicense.txt": "unlicense",
+            "isc.txt": "isc",
+            "bsd3.txt": "bsd-3-clause",
+            "bsd2.txt": "bsd-2-clause",
+        }
+        for filename, content in samples.items():
+            path = tmp_path / filename
+            path.write_text(content)
+            assert filters_module._detect_license(path) == expected[filename]
+
+    def test_matches_stat_invalid_absolute_date_filters_are_ignored(self):
+        stat = SimpleNamespace(st_mtime=datetime(2026, 1, 12, tzinfo=timezone.utc).timestamp())
+        filters = SearchFilters(mod_after="bad-date", mod_before="bad-date")
+        assert filters.matches_stat(stat) is True
+
+    def test_matches_tags_empty_requested_values_short_circuit_true(self, tmp_path):
+        f = tmp_path / "note.txt"
+        f.write_text("x")
+        assert SearchFilters(tag=["", "   "]).matches_tags(f) is True
+
+    def test_matches_language_and_license_symlink_branches(self, tmp_path):
+        target = tmp_path / "target.py"
+        target.write_text("# SPDX-License-Identifier: MIT\nprint('ok')\n")
+        link = tmp_path / "link.py"
+        try:
+            link.symlink_to(target)
+        except (NotImplementedError, OSError):
+            pytest.skip("Symlinks are not supported in this test environment")
+
+        assert SearchFilters(lang=["python"]).matches_language(link) is False
+        assert SearchFilters(not_lang=["python"]).matches_language(link) is True
+        assert SearchFilters(license=["mit"]).matches_license(link) is False
+        assert SearchFilters(not_license=["mit"]).matches_license(link) is True
