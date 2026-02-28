@@ -1,0 +1,4 @@
+scenario,runs,min_s,median_s,mean_s,max_s,result_count
+all-files,1,0.082037,0.082037,0.082037,0.082037,2100
+python-files,1,0.041206,0.041206,0.041206,0.041206,1500
+todo-content,1,0.093594,0.093594,0.093594,0.093594,600

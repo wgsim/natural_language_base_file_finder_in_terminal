@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 1,
+  "generated_at": "2026-02-28T08:45:19+00:00",
+  "root": "<external-root:RNAseq_analysis_WebTool>",
+  "parameters": {
+    "repeats": 1,
+    "max_results": 0,
+    "workers": 1,
+    "follow_symlinks": false,
+    "include_binary": false
+  },
+  "results": [
+    {
+      "scenario": "all-files",
+      "runs": 1,
+      "min_s": 0.353088,
+      "median_s": 0.353088,
+      "mean_s": 0.353088,
+      "max_s": 0.353088,
+      "result_count": 203
+    },
+    {
+      "scenario": "python-files",
+      "runs": 1,
+      "min_s": 0.321681,
+      "median_s": 0.321681,
+      "mean_s": 0.321681,
+      "max_s": 0.321681,
+      "result_count": 159
+    },
+    {
+      "scenario": "todo-content",
+      "runs": 1,
+      "min_s": 0.340536,
+      "median_s": 0.340536,
+      "mean_s": 0.340536,
+      "max_s": 0.340536,
+      "result_count": 1
+    }
+  ]
+}

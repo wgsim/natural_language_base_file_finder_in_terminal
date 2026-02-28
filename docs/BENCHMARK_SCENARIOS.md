@@ -54,7 +54,17 @@ PYTHONPATH=src python scripts/ci/benchmark_regression_gate.py --root "$ROOT" --r
 PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root "$ROOT" --repeats 7 --ratio-threshold 1.35
 ```
 
-4. Similarity-threshold behavior check (new option):
+4. Persist run artifacts (JSON + CSV):
+```bash
+PYTHONPATH=src python scripts/bench/benchmark_walk.py --root "$ROOT" --repeats 7 --workers 4 --output-json "/tmp/bench/$SAMPLE.json" --output-csv "/tmp/bench/$SAMPLE.csv"
+```
+
+5. Compare two runs automatically (baseline vs candidate):
+```bash
+python scripts/bench/compare_benchmark_results.py --baseline /tmp/bench/baseline.json --candidate /tmp/bench/candidate.json --metric median_s --ratio-threshold 1.35
+```
+
+6. Similarity-threshold behavior check (new option):
 ```bash
 askfind "files similar to auth.py" --root "$ROOT" --similarity-threshold 0.55 --no-rerank --no-cache
 askfind "files similar to auth.py" --root "$ROOT" --similarity-threshold 0.85 --no-rerank --no-cache

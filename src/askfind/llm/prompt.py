@@ -57,6 +57,7 @@ Rules:
 - ext values must include the dot: ".py" not "py".
 - has accepts a list of strings that must ALL appear in the file content.
 - similar accepts a file name/path reference to compare content similarity against.
+- Similarity cutoff is controlled by runtime config/CLI (`similarity_threshold` / `--similarity-threshold`); do not emit a `similarity_threshold` key.
 - loc/complexity use numeric constraints like ">200", "<20", or exact "10".
 - lang/not_lang accept language names (e.g., python, javascript, typescript, shell).
 - license/not_license accept normalized license ids (e.g., mit, apache-2.0, gpl-3.0).

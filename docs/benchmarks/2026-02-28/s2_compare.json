@@ -1,0 +1,27 @@
+{
+  "baseline": "<repo-root>/docs/benchmarks/2026-02-28/s2_workers1.json",
+  "candidate": "<repo-root>/docs/benchmarks/2026-02-28/s2_workers4.json",
+  "metric": "median_s",
+  "ratio_threshold": 1.35,
+  "comparisons": [
+    {
+      "scenario": "all-files",
+      "baseline": 0.032817,
+      "candidate": 0.018384,
+      "ratio": 0.560197
+    },
+    {
+      "scenario": "python-files",
+      "baseline": 0.013472,
+      "candidate": 0.016311,
+      "ratio": 1.210733
+    },
+    {
+      "scenario": "todo-content",
+      "baseline": 0.016435,
+      "candidate": 0.020973,
+      "ratio": 1.276118
+    }
+  ],
+  "regressions": []
+}
