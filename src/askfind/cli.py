@@ -29,6 +29,7 @@ from askfind.search.index import (
 
 logger = get_logger(__name__)
 from askfind.output.formatter import FileResult, format_json, format_plain, format_verbose
+from askfind.search.filters import DEFAULT_SIMILARITY_THRESHOLD, SearchFilters
 from askfind.search.walker import walk_and_filter
 
 
@@ -73,6 +74,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--search-archives",
         action="store_true",
         help="Search inside supported archives (.zip, .tar.gz) by entry path/name and content",
+    )
+    parser.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=None,
+        help=(
+            "Override similarity cutoff for `similar` filter "
+            "(0.0-1.0, default uses config value)"
+        ),
     )
     parser.add_argument("--debug", action="store_true", help="Enable debug logging")
     parser.add_argument("--interactive-session", action="store_true", help=argparse.SUPPRESS)
@@ -201,6 +211,14 @@ def _read_bool_config(value: object, *, default: bool) -> bool:
 def _read_positive_int_config(value: object, *, default: int) -> int:
     if isinstance(value, int) and value >= 1:
         return value
+    return default
+
+
+def _read_similarity_threshold_config(value: object, *, default: float) -> float:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        normalized = float(value)
+        if 0.0 <= normalized <= 1.0:
+            return normalized
     return default
 
 
@@ -348,6 +366,7 @@ def _handle_config(args: argparse.Namespace) -> int:
         table.add_row("follow_symlinks", str(config.follow_symlinks))
         table.add_row("exclude_binary_files", str(config.exclude_binary_files))
         table.add_row("search_archives", str(config.search_archives))
+        table.add_row("similarity_threshold", str(config.similarity_threshold))
         table.add_row("editor", config.editor)
         api_key = get_api_key()
         table.add_row("api_key", "****" + api_key[-4:] if api_key else "[not set]")
@@ -383,6 +402,16 @@ def _handle_config(args: argparse.Namespace) -> int:
                 return 2
             if args.key in {"parallel_workers", "cache_ttl_seconds"} and value < 1:
                 print(f"Error: '{args.key}' must be >= 1.", file=sys.stderr)
+                return 2
+
+        if args.key == "similarity_threshold":
+            try:
+                value = float(value)
+            except ValueError:
+                print("Error: 'similarity_threshold' must be a float.", file=sys.stderr)
+                return 2
+            if value < 0.0 or value > 1.0:
+                print("Error: 'similarity_threshold' must be between 0.0 and 1.0.", file=sys.stderr)
                 return 2
 
         if args.key in {
@@ -501,6 +530,16 @@ def main(argv: list[str] | None = None) -> int:
         default=1,
     )
     parallel_workers = args.workers or configured_workers
+    configured_similarity_threshold = _read_similarity_threshold_config(
+        getattr(config, "similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD),
+        default=DEFAULT_SIMILARITY_THRESHOLD,
+    )
+    similarity_threshold = configured_similarity_threshold
+    if args.similarity_threshold is not None:
+        if args.similarity_threshold < 0.0 or args.similarity_threshold > 1.0:
+            print("Error: --similarity-threshold must be between 0.0 and 1.0.", file=sys.stderr)
+            return 2
+        similarity_threshold = args.similarity_threshold
     if args.include_binary:
         exclude_binary_files = False
     root_value = args.root if _has_root_override(raw_argv) else config.default_root
@@ -513,6 +552,7 @@ def main(argv: list[str] | None = None) -> int:
         config.follow_symlinks = follow_symlinks
         config.exclude_binary_files = exclude_binary_files
         config.search_archives = search_archives
+        config.similarity_threshold = similarity_threshold
         config.parallel_workers = parallel_workers
         config.cache_enabled = cache_enabled
         config.cache_ttl_seconds = cache_ttl_seconds
@@ -531,6 +571,7 @@ def main(argv: list[str] | None = None) -> int:
         config.follow_symlinks = follow_symlinks
         config.exclude_binary_files = exclude_binary_files
         config.search_archives = search_archives
+        config.similarity_threshold = similarity_threshold
         config.parallel_workers = parallel_workers
         config.cache_enabled = cache_enabled
         config.cache_ttl_seconds = cache_ttl_seconds
@@ -578,6 +619,7 @@ def main(argv: list[str] | None = None) -> int:
             exclude_binary_files=exclude_binary_files,
             search_archives=search_archives,
             traversal_workers=parallel_workers,
+            similarity_threshold=similarity_threshold,
         )
         root_fingerprint = compute_root_fingerprint(root_path)
 
@@ -615,6 +657,8 @@ def main(argv: list[str] | None = None) -> int:
                     else f"Received LLM response: {raw_response}"
                 )
                 filters = parse_llm_response(raw_response)
+                if isinstance(filters, SearchFilters):
+                    filters.similarity_threshold = similarity_threshold
                 index_options = IndexOptions(
                     respect_ignore_files=respect_ignore_files,
                     follow_symlinks=follow_symlinks,

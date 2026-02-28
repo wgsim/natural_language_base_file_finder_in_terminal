@@ -26,6 +26,7 @@ def _make_mock_config(default_root="."):
     mock_config.follow_symlinks = False
     mock_config.exclude_binary_files = True
     mock_config.search_archives = False
+    mock_config.similarity_threshold = 0.55
     mock_config.editor = "vim"
     return mock_config
 
@@ -128,6 +129,11 @@ class TestBuildParser:
         args = parser.parse_args(["test", "--search-archives"])
         assert args.search_archives is True
 
+    def test_similarity_threshold_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--similarity-threshold", "0.8"])
+        assert args.similarity_threshold == 0.8
+
 
 class TestValidateBaseUrl:
     def test_accepts_https_remote(self):
@@ -178,6 +184,11 @@ class TestMain:
         # Verify spawn was called and session.run() was called
         mock_spawn.assert_called_once()
         mock_session.run.assert_called_once()
+
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    def test_similarity_threshold_out_of_range_returns_2(self, mock_get_key):
+        result = main(["query", "--similarity-threshold", "2.0"])
+        assert result == 2
 
 
 class TestMainIntegration:
@@ -409,6 +420,36 @@ class TestMainIntegration:
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")
     @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode_similarity_threshold_override(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path
+    ):
+        reference = tmp_path / "auth.py"
+        reference.write_text("def login(user):\n    return check(user)\n")
+        candidate = tmp_path / "auth_variant.py"
+        candidate.write_text("def login(user):\n    return user\n")
+
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"type":"file","similar":"auth.py"}',
+        )
+
+        result = main(
+            [
+                "files similar to auth.py",
+                "--root",
+                str(tmp_path),
+                "--similarity-threshold",
+                "0.99",
+                "--no-rerank",
+                "--no-cache",
+            ]
+        )
+        assert result == 1
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
     def test_single_command_mode_code_metrics_filter(
         self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
     ):
@@ -577,6 +618,21 @@ class TestConfigSubcommand:
         assert result == 2
 
     @patch("askfind.cli.Config.from_file")
+    def test_config_set_similarity_threshold_success(self, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "set", "similarity_threshold", "0.7"])
+        assert result == 0
+        assert mock_config.similarity_threshold == 0.7
+        mock_config.save.assert_called_once()
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_similarity_threshold_invalid_value_returns_2(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "similarity_threshold", "1.5"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
     def test_config_set_cache_enabled_success(self, mock_config_cls):
         mock_config = MagicMock()
         mock_config_cls.return_value = mock_config
@@ -673,6 +729,7 @@ class TestConfigSubcommandAdditional:
 
         assert result == 0
         mock_table.add_row.assert_any_call("api_key", "****1234")
+        mock_table.add_row.assert_any_call("similarity_threshold", "0.55")
         mock_console.print.assert_called_once_with(mock_table)
 
     @patch("askfind.cli.set_api_key")

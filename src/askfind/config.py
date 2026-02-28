@@ -33,6 +33,7 @@ class Config:
     follow_symlinks: bool = False
     exclude_binary_files: bool = True
     search_archives: bool = False
+    similarity_threshold: float = 0.55
     editor: str = "vim"
 
     @classmethod
@@ -57,6 +58,7 @@ class Config:
             "follow_symlinks": search,
             "exclude_binary_files": search,
             "search_archives": search,
+            "similarity_threshold": search,
             "editor": interactive,
         }
         for field in fields(cls):
@@ -78,6 +80,17 @@ class Config:
                 int_value = kwargs[int_key]
                 if not isinstance(int_value, int) or int_value < 1:
                     kwargs.pop(int_key)
+        if "similarity_threshold" in kwargs:
+            threshold = kwargs["similarity_threshold"]
+            if (
+                not isinstance(threshold, (int, float))
+                or isinstance(threshold, bool)
+                or float(threshold) < 0.0
+                or float(threshold) > 1.0
+            ):
+                kwargs.pop("similarity_threshold")
+            else:
+                kwargs["similarity_threshold"] = float(threshold)
         return cls(**kwargs)
 
     def save(self, path: Path) -> None:
@@ -100,6 +113,7 @@ class Config:
                 "follow_symlinks": self.follow_symlinks,
                 "exclude_binary_files": self.exclude_binary_files,
                 "search_archives": self.search_archives,
+                "similarity_threshold": self.similarity_threshold,
             },
             "interactive": {
                 "editor": self.editor,

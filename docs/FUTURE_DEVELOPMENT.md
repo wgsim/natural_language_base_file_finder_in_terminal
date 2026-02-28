@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.13** (Current) - file similarity and code-metrics filters (`similar`, `loc`, `complexity`) across traversal/index query
+- **v0.1.14** (Current) - configurable similarity threshold and index-query branch-coverage hardening
+- **v0.1.13** - file similarity and code-metrics filters (`similar`, `loc`, `complexity`) across traversal/index query
 - **v0.1.12** - language/license filters (`lang`, `license`) across traversal/index query with CLI/LLM parser support
 - **v0.1.11** - macOS Finder tag filtering (`tag`) and metadata-path parity in traversal/index query
 - **v0.1.10** - Archive stage 2 (`has` content matching inside `.zip`/`.tar.gz`) and walker archive scan refactor
@@ -43,6 +44,7 @@
 #### Filter Improvements
 - [x] Date range queries ("between Jan 1 and Jan 15")
 - [x] File similarity search ("files similar to auth.py")
+- [x] Configurable similarity threshold (`--similarity-threshold`, `similarity_threshold`)
 - [x] Code complexity filters (cyclomatic complexity, LOC)
 - [x] Language detection and filtering
 - [x] License detection and filtering

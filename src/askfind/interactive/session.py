@@ -18,6 +18,7 @@ from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import get_logger
 from askfind.output.formatter import FileResult, human_size
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
+from askfind.search.filters import DEFAULT_SIMILARITY_THRESHOLD
 from askfind.search.walker import walk_and_filter
 
 console = Console()
@@ -120,6 +121,11 @@ class InteractiveSession:
             exclude_binary_files = getattr(self.config, "exclude_binary_files", True)
             search_archives = getattr(self.config, "search_archives", False)
             traversal_workers = getattr(self.config, "parallel_workers", 1)
+            similarity_threshold = getattr(
+                self.config,
+                "similarity_threshold",
+                DEFAULT_SIMILARITY_THRESHOLD,
+            )
             if not isinstance(respect_ignore_files, bool):
                 respect_ignore_files = True
             if not isinstance(follow_symlinks, bool):
@@ -130,6 +136,14 @@ class InteractiveSession:
                 search_archives = False
             if not isinstance(traversal_workers, int) or traversal_workers < 1:
                 traversal_workers = 1
+            if (
+                not isinstance(similarity_threshold, (int, float))
+                or isinstance(similarity_threshold, bool)
+                or float(similarity_threshold) < 0.0
+                or float(similarity_threshold) > 1.0
+            ):
+                similarity_threshold = DEFAULT_SIMILARITY_THRESHOLD
+            similarity_threshold = float(similarity_threshold)
 
             max_results = getattr(self.config, "max_results", 50)
             if not isinstance(max_results, int):
@@ -158,6 +172,7 @@ class InteractiveSession:
                     exclude_binary_files=exclude_binary_files,
                     search_archives=search_archives,
                     traversal_workers=traversal_workers,
+                    similarity_threshold=similarity_threshold,
                 )
                 root_fingerprint = compute_root_fingerprint(self.root)
                 try:
@@ -184,6 +199,8 @@ class InteractiveSession:
             if cached_paths is None:
                 raw = self.client.extract_filters(query)
                 filters = parse_llm_response(raw)
+                if hasattr(filters, "similarity_threshold"):
+                    filters.similarity_threshold = similarity_threshold
                 paths = list(
                     walk_and_filter(
                         self.root,

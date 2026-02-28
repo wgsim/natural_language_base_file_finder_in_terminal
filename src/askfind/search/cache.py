@@ -42,6 +42,7 @@ def build_search_cache_key(
     exclude_binary_files: bool,
     search_archives: bool,
     traversal_workers: int,
+    similarity_threshold: float,
 ) -> str:
     payload = {
         "query": query,
@@ -55,6 +56,7 @@ def build_search_cache_key(
         "exclude_binary_files": exclude_binary_files,
         "search_archives": search_archives,
         "traversal_workers": traversal_workers,
+        "similarity_threshold": similarity_threshold,
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

@@ -133,6 +133,7 @@ askfind config set cache_ttl_seconds 300
 askfind config set respect_ignore_files false
 askfind config set follow_symlinks true
 askfind config set exclude_binary_files false
+askfind config set similarity_threshold 0.65
 askfind config set editor "code"
 
 # List available models from your provider
@@ -212,6 +213,9 @@ askfind "test files in src excluding vendor"
 
 # Combine multiple criteria
 askfind "small python files in src modified this week containing async"
+
+# Tighten similarity matching for one command
+askfind "files similar to auth.py" --similarity-threshold 0.8
 ```
 
 ## Configuration File
@@ -232,6 +236,8 @@ cache_ttl_seconds = 300
 respect_ignore_files = true
 follow_symlinks = false
 exclude_binary_files = true
+search_archives = false
+similarity_threshold = 0.55
 
 [interactive]
 editor = "vim"
@@ -320,6 +326,9 @@ PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root .
 # Optional: use a local index directory for sandboxed/dev runs
 PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root . --index-dir /tmp/askfind-indexes
 ```
+
+For reproducible multi-repo benchmark plans, see:
+`docs/BENCHMARK_SCENARIOS.md`
 
 ### Git Hooks
 

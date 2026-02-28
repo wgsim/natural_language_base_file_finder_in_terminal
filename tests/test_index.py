@@ -379,6 +379,36 @@ def test_query_index_respects_max_results(tmp_path, monkeypatch):
     assert len(results) == 1
 
 
+def test_query_index_root_resolve_failure_sets_fallback_reason(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("print('a')\n")
+    opts = _options()
+    index.build_index(root=root, options=opts)
+    diagnostics = index.IndexQueryDiagnostics()
+
+    original_resolve = index.Path.resolve
+
+    def failing_resolve(self, *args, **kwargs):
+        if self == root:
+            raise OSError("simulated root resolve failure")
+        return original_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(index.Path, "resolve", failing_resolve)
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file"),
+        max_results=0,
+        options=opts,
+        diagnostics=diagnostics,
+    )
+
+    assert results is None
+    assert diagnostics.fallback_reason == "root_resolve_failed"
+
+
 def test_matches_indexed_path_filter_rejections(tmp_path):
     root = tmp_path / "repo"
     root.mkdir()
@@ -431,6 +461,108 @@ def test_matches_indexed_path_outside_root_returns_false(tmp_path):
     ) is False
 
 
+def test_matches_indexed_path_handles_path_resolve_error(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    root.mkdir()
+    path = root / "a.py"
+    path.write_text("print('a')\n")
+    original_resolve = index.Path.resolve
+
+    def failing_resolve(self, *args, **kwargs):
+        if self == path:
+            raise OSError("simulated resolve failure")
+        return original_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(index.Path, "resolve", failing_resolve)
+
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=index.SearchFilters(type="file"),
+        follow_symlinks=False,
+    ) is False
+
+
+def test_matches_indexed_path_handles_stat_error(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    root.mkdir()
+    path = root / "a.py"
+    path.write_text("print('a')\n")
+    original_stat = index.Path.stat
+
+    def failing_stat(self, *args, **kwargs):
+        if self == path:
+            raise OSError("simulated stat failure")
+        return original_stat(self, *args, **kwargs)
+
+    monkeypatch.setattr(index.Path, "stat", failing_stat)
+
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=index.SearchFilters(type="file"),
+        follow_symlinks=False,
+    ) is False
+
+
+def test_matches_indexed_path_handles_relative_to_error(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    root.mkdir()
+    path = root / "a.py"
+    path.write_text("print('a')\n")
+    original_relative_to = index.Path.relative_to
+
+    def failing_relative_to(self, *args, **kwargs):
+        if self == path:
+            raise ValueError("simulated relative_to failure")
+        return original_relative_to(self, *args, **kwargs)
+
+    monkeypatch.setattr(index.Path, "relative_to", failing_relative_to)
+
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=index.SearchFilters(type="file"),
+        follow_symlinks=False,
+    ) is False
+
+
+@pytest.mark.parametrize(
+    "method_name",
+    ["matches_tags", "matches_language", "matches_license", "matches_similarity", "matches_code_metrics"],
+)
+def test_matches_indexed_path_file_specific_filter_rejections(tmp_path, monkeypatch, method_name):
+    root = tmp_path / "repo"
+    root.mkdir()
+    path = root / "a.py"
+    path.write_text("# SPDX-License-Identifier: MIT\nprint('a')\n")
+    filters = index.SearchFilters(type="file")
+    monkeypatch.setattr(filters, method_name, lambda *_args, **_kwargs: False)
+
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=filters,
+        follow_symlinks=False,
+    ) is False
+
+
+def test_matches_indexed_path_content_filter_rejection(tmp_path, monkeypatch):
+    root = tmp_path / "repo"
+    root.mkdir()
+    path = root / "a.py"
+    path.write_text("print('a')\n")
+    filters = index.SearchFilters(type="file", has=["missing"])
+    monkeypatch.setattr(filters, "matches_content", lambda *_args, **_kwargs: False)
+
+    assert index._matches_indexed_path(
+        root=root,
+        path=path,
+        filters=filters,
+        follow_symlinks=False,
+    ) is False
+
+
 @pytest.mark.parametrize(
     "raw_options",
     [
@@ -473,3 +605,26 @@ def test_matches_indexed_path_outside_root_returns_false(tmp_path):
 )
 def test_parse_options_rejects_invalid_shapes(raw_options):
     assert index._parse_options(raw_options) is None
+
+
+def test_read_payload_rejects_invalid_parsed_options(tmp_path):
+    index_path = tmp_path / "idx.json"
+    index_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "root_fingerprint": "fp",
+                "options": {
+                    "respect_ignore_files": True,
+                    "follow_symlinks": False,
+                    "exclude_binary_files": True,
+                    "search_archives": False,
+                    "traversal_workers": "bad",
+                },
+                "paths": ["a.py"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert index._read_payload(index_path=index_path) is None
