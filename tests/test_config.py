@@ -27,6 +27,7 @@ class TestConfig:
         assert config.follow_symlinks is False
         assert config.exclude_binary_files is True
         assert config.search_archives is False
+        assert config.similarity_threshold == 0.55
         assert config.editor == "vim"
 
     def test_from_toml_string(self, tmp_path):
@@ -59,6 +60,7 @@ class TestConfig:
             follow_symlinks=True,
             exclude_binary_files=False,
             search_archives=True,
+            similarity_threshold=0.72,
             editor="nano",
         )
         config_file = tmp_path / "config.toml"
@@ -72,6 +74,7 @@ class TestConfig:
         assert reloaded.follow_symlinks is True
         assert reloaded.exclude_binary_files is False
         assert reloaded.search_archives is True
+        assert reloaded.similarity_threshold == 0.72
         assert reloaded.editor == "nano"
 
     def test_invalid_respect_ignore_files_type_falls_back_to_default(self, tmp_path):
@@ -108,6 +111,14 @@ class TestConfig:
         config = Config.from_file(config_file)
         assert config.cache_enabled is True
         assert config.cache_ttl_seconds == 300
+
+    def test_invalid_similarity_threshold_falls_back_to_default(self, tmp_path):
+        toml_content = b"[search]\nsimilarity_threshold = 1.5\n"
+        config_file = tmp_path / "config.toml"
+        config_file.write_bytes(toml_content)
+
+        config = Config.from_file(config_file)
+        assert config.similarity_threshold == 0.55
 
 
 class TestGetApiKey:

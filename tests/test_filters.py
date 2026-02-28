@@ -495,6 +495,17 @@ class TestSearchFilters:
         filters = SearchFilters(similar="missing.py")
         assert filters.matches_similarity(candidate, root=tmp_path) is False
 
+    def test_matches_similarity_uses_configurable_threshold(self, tmp_path):
+        reference = tmp_path / "auth.py"
+        reference.write_text("def login(user):\n    return check(user)\n")
+        candidate = tmp_path / "auth_variant.py"
+        candidate.write_text("def login(user):\n    return user\n")
+        permissive = SearchFilters(similar="auth.py", similarity_threshold=0.2)
+        strict = SearchFilters(similar="auth.py", similarity_threshold=0.95)
+
+        assert permissive.matches_similarity(candidate, root=tmp_path) is True
+        assert strict.matches_similarity(candidate, root=tmp_path) is False
+
     def test_read_user_tags_xattr_without_getxattr_returns_empty(self, tmp_path, monkeypatch):
         f = tmp_path / "note.txt"
         f.write_text("x")

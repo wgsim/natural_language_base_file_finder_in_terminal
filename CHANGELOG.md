@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.14] - 2026-02-28
+
+### Added
+- Added configurable similarity cutoff support:
+  - new CLI override `--similarity-threshold`
+  - new config key `similarity_threshold` under `[search]`
+  - threshold now participates in cache-key construction (single + interactive modes)
+- Added index module branch-coverage tests for root resolve failures and `_matches_indexed_path` guard branches.
+- Added a 4-sample benchmark scenario guide under `docs/BENCHMARK_SCENARIOS.md`.
+
+### Changed
+- Updated package version metadata to `0.1.14`.
+
 ## [0.1.13] - 2026-02-28
 
 ### Added

@@ -385,6 +385,7 @@ class SearchFilters:
     - size: File size constraints
     - has: Content matching (all terms must be present)
     - similar: Similarity matching against a reference file
+    - similarity_threshold: Similarity cutoff in [0.0, 1.0]
     - loc: Lines-of-code constraint
     - complexity: Approximate complexity constraint
     - lang, not_lang: Programming language filtering
@@ -416,6 +417,7 @@ class SearchFilters:
     size: str | None = None
     has: list[str] | None = None
     similar: str | None = None
+    similarity_threshold: float | None = None
     loc: str | None = None
     complexity: str | None = None
     lang: list[str] | None = None
@@ -684,7 +686,12 @@ class SearchFilters:
         if candidate_text is None:
             return False
         score = _compute_similarity_score(reference_text, candidate_text)
-        return score >= DEFAULT_SIMILARITY_THRESHOLD
+        threshold = (
+            self.similarity_threshold
+            if self.similarity_threshold is not None
+            else DEFAULT_SIMILARITY_THRESHOLD
+        )
+        return score >= threshold
 
     def matches_tags(self, filepath: Path, *, follow_symlinks: bool = False) -> bool:
         if not self.tag:
