@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.15** (Current) - benchmark artifact output/compare automation and measured 4-sample baseline capture
+- **v0.1.16** (Current) - release checklist + optional CI benchmark compare job + synthesized dataset generator script
+- **v0.1.15** - benchmark artifact output/compare automation and measured 4-sample baseline capture
 - **v0.1.14** - configurable similarity threshold and index-query branch-coverage hardening
 - **v0.1.13** - file similarity and code-metrics filters (`similar`, `loc`, `complexity`) across traversal/index query
 - **v0.1.12** - language/license filters (`lang`, `license`) across traversal/index query with CLI/LLM parser support

@@ -8,6 +8,23 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      run_benchmark_compare:
+        description: "Run optional benchmark baseline comparison job"
+        required: false
+        default: "false"
+      benchmark_baseline_json:
+        description: "Baseline JSON path committed in repo"
+        required: false
+        default: "docs/benchmarks/2026-02-28/s1_workers4.json"
+      benchmark_repeats:
+        description: "Benchmark repeats for candidate run"
+        required: false
+        default: "3"
+      benchmark_ratio_threshold:
+        description: "Allowed candidate/baseline ratio"
+        required: false
+        default: "1.35"
 
 jobs:
   test:
@@ -60,3 +77,38 @@ jobs:
 
       - name: Index query regression gate
         run: PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root .
+
+  benchmark-compare:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_benchmark_compare == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Generate candidate benchmark artifact
+        run: |
+          PYTHONPATH=src python scripts/bench/benchmark_walk.py \
+            --root . \
+            --repeats "${{ inputs.benchmark_repeats }}" \
+            --workers 4 \
+            --output-json /tmp/askfind-benchmark-candidate.json
+
+      - name: Compare baseline and candidate benchmark artifacts
+        run: |
+          python scripts/bench/compare_benchmark_results.py \
+            --baseline "${{ inputs.benchmark_baseline_json }}" \
+            --candidate /tmp/askfind-benchmark-candidate.json \
+            --metric median_s \
+            --ratio-threshold "${{ inputs.benchmark_ratio_threshold }}"
