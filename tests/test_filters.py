@@ -2,6 +2,7 @@
 
 
 from datetime import datetime, timezone
+import plistlib
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -288,3 +289,26 @@ class TestSearchFilters:
             "askfind.search.filters._file_contains_all_terms", side_effect=OSError
         ):
             assert filters.matches_content(f) is False
+
+    def test_matches_tags_returns_true_when_all_requested_tags_exist(self, tmp_path):
+        f = tmp_path / "note.txt"
+        f.write_text("x")
+        raw_tags = plistlib.dumps(["ProjectX\n6", "Urgent\n2"])
+        filters = SearchFilters(tag=["projectx", "urgent"])
+        with patch("askfind.search.filters.os.getxattr", return_value=raw_tags, create=True):
+            assert filters.matches_tags(f) is True
+
+    def test_matches_tags_returns_false_when_missing_tag(self, tmp_path):
+        f = tmp_path / "note.txt"
+        f.write_text("x")
+        raw_tags = plistlib.dumps(["ProjectX\n6"])
+        filters = SearchFilters(tag=["ProjectX", "Urgent"])
+        with patch("askfind.search.filters.os.getxattr", return_value=raw_tags, create=True):
+            assert filters.matches_tags(f) is False
+
+    def test_matches_tags_returns_false_when_xattr_missing(self, tmp_path):
+        f = tmp_path / "note.txt"
+        f.write_text("x")
+        filters = SearchFilters(tag=["ProjectX"])
+        with patch("askfind.search.filters.os.getxattr", side_effect=OSError, create=True):
+            assert filters.matches_tags(f) is False

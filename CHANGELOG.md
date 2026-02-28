@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.11] - 2026-02-28
+
+### Added
+- Added macOS Finder tag filtering support via `tag` query filter:
+  - parses and matches `com.apple.metadata:_kMDItemUserTags` extended attributes.
+  - supports case-insensitive tag matching and strips Finder color suffixes.
+- Added parser, filter, walker, and CLI tests for tag-filtered search scenarios.
+
+### Changed
+- Search pipeline now applies tag filtering in both live traversal and index-query paths.
+- Updated package version metadata to `0.1.11`.
+
 ## [0.1.10] - 2026-02-28
 
 ### Added

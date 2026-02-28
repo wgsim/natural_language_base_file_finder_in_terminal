@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import fnmatch
 import os
+import plistlib
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -12,6 +13,7 @@ from pathlib import Path
 # Maximum file size for content scanning (10 MB)
 MAX_CONTENT_SCAN_BYTES = 10 * 1024 * 1024
 CONTENT_SCAN_CHUNK_BYTES = 64 * 1024
+MACOS_TAG_XATTR = "com.apple.metadata:_kMDItemUserTags"
 
 
 def parse_size(s: str) -> int:
@@ -95,6 +97,45 @@ def _file_contains_all_terms(filepath: Path, terms: list[str]) -> bool:
     return False
 
 
+def _normalize_tag_name(tag: str) -> str:
+    # Finder tags may include a color suffix like "ProjectX\n6".
+    normalized = tag.split("\n", 1)[0].strip()
+    return normalized.casefold()
+
+
+def _decode_macos_tags(payload: bytes) -> set[str]:
+    try:
+        decoded = plistlib.loads(payload)
+    except (plistlib.InvalidFileException, ValueError, TypeError):
+        return set()
+    if not isinstance(decoded, list):
+        return set()
+    tags: set[str] = set()
+    for item in decoded:
+        if not isinstance(item, str):
+            continue
+        normalized = _normalize_tag_name(item)
+        if normalized:
+            tags.add(normalized)
+    return tags
+
+
+def _read_user_tags_xattr(filepath: Path, *, follow_symlinks: bool) -> set[str]:
+    if not hasattr(os, "getxattr"):
+        return set()
+    try:
+        raw = os.getxattr(
+            str(filepath),
+            MACOS_TAG_XATTR,
+            follow_symlinks=follow_symlinks,
+        )
+    except OSError:
+        return set()
+    if not isinstance(raw, bytes):
+        return set()
+    return _decode_macos_tags(raw)
+
+
 @dataclass
 class SearchFilters:
     """Search filters extracted from natural language queries.
@@ -109,6 +150,7 @@ class SearchFilters:
     - mod_after, mod_before: Absolute modification date range constraints
     - size: File size constraints
     - has: Content matching (all terms must be present)
+    - tag: macOS Finder tags attached to files (all tags must be present)
     - type: File type (file, dir, link)
     - depth: Directory depth constraints
     - perm: Permission checks (r, w, x)
@@ -134,6 +176,7 @@ class SearchFilters:
     mod_before: str | None = None
     size: str | None = None
     has: list[str] | None = None
+    tag: list[str] | None = None
     type: str | None = None
     depth: str | None = None
     perm: str | None = None
@@ -280,6 +323,20 @@ class SearchFilters:
             return _file_contains_all_terms(filepath, self.has)
         except (OSError, UnicodeDecodeError):
             return False
+
+    def matches_tags(self, filepath: Path, *, follow_symlinks: bool = False) -> bool:
+        if not self.tag:
+            return True
+        requested = {_normalize_tag_name(tag) for tag in self.tag if tag.strip()}
+        if not requested:
+            return True
+        present_tags = _read_user_tags_xattr(
+            filepath,
+            follow_symlinks=follow_symlinks,
+        )
+        if not present_tags:
+            return False
+        return requested.issubset(present_tags)
 
 
 def _fuzzy_match(pattern: str, text: str) -> bool:

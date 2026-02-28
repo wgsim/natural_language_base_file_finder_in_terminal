@@ -19,6 +19,7 @@ FILTER_SCHEMA = """\
   "mod_before": "2026-01-15",  // modified before absolute date boundary (YYYY-MM-DD or ISO datetime)
   "size": ">1MB",        // size (KB, MB, GB)
   "has": ["TODO"],       // file content contains all terms
+  "tag": ["ProjectX"],   // macOS Finder tags (all tags must be present)
   "type": "file",        // file, dir, link
   "depth": "<5",         // directory depth
   "perm": "x"            // permissions: r, w, x
@@ -48,5 +49,6 @@ Rules:
 - For "this week" use ">7d". For "today" use ">1d". For "this month" use ">30d".
 - ext values must include the dot: ".py" not "py".
 - has accepts a list of strings that must ALL appear in the file content.
+- tag accepts a list of macOS Finder tag names that must ALL be present.
 - Only include keys relevant to the query.\
 """
