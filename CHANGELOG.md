@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.16] - 2026-02-28
+
+### Added
+- Added release checklist document: `docs/RELEASE_CHECKLIST.md`
+  - includes mandatory benchmark-baseline refresh items for release prep.
+- Added reusable S4 synthetic dataset generator:
+  - `scripts/bench/generate_synth_dataset.sh`
+  - parameterized via `PY_FILES`, `TODO_FILES`, `BINARY_FILES`, `BINARY_BYTES`.
+- Added optional CI benchmark compare job in `.github/workflows/ci.yml`:
+  - manual `workflow_dispatch` inputs
+  - baseline-vs-candidate comparison through `scripts/bench/compare_benchmark_results.py`.
+
+### Changed
+- Updated benchmark scenario docs to use the new synthetic dataset generator script.
+- Updated package version metadata to `0.1.16`.
+
 ## [0.1.15] - 2026-02-28
 
 ### Added

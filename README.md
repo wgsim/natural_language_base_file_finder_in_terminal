@@ -339,6 +339,9 @@ For reproducible multi-repo benchmark plans, see:
 Latest captured baseline:
 `docs/benchmark-baseline-2026-02-28.md`
 
+Release process checklist:
+`docs/RELEASE_CHECKLIST.md`
+
 ### Git Hooks
 
 This repository includes shared git hooks under `.githooks/`.

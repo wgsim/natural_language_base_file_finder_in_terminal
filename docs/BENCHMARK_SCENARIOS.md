@@ -20,16 +20,13 @@ This document defines a reproducible benchmark plan using 4 repository/sample ty
 ## Prepare S4 (Synthetic)
 
 ```bash
-mkdir -p /tmp/askfind_bench_synth/src /tmp/askfind_bench_synth/docs /tmp/askfind_bench_synth/logs
-for i in $(seq 1 1500); do
-  printf "def f_%s(x):\n    if x > 0:\n        return x\n    return 0\n" "$i" > /tmp/askfind_bench_synth/src/file_$i.py
-done
-for i in $(seq 1 600); do
-  printf "TODO item %s\n" "$i" > /tmp/askfind_bench_synth/docs/note_$i.md
-done
-for i in $(seq 1 120); do
-  head -c 65536 /dev/urandom > /tmp/askfind_bench_synth/logs/blob_$i.bin
-done
+scripts/bench/generate_synth_dataset.sh /tmp/askfind_bench_synth
+```
+
+Optional size tuning via environment variables:
+
+```bash
+PY_FILES=2000 TODO_FILES=800 BINARY_FILES=200 BINARY_BYTES=32768 scripts/bench/generate_synth_dataset.sh /tmp/askfind_bench_synth
 ```
 
 ## Execution Plan
