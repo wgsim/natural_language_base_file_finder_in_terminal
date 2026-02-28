@@ -450,6 +450,19 @@ def _scan_directory(
             ):
                 continue
 
+            if is_file and not filters.matches_similarity(
+                entry_path,
+                root=root,
+                follow_symlinks=follow_symlinks,
+            ):
+                continue
+
+            if is_file and not filters.matches_code_metrics(
+                entry_path,
+                follow_symlinks=follow_symlinks,
+            ):
+                continue
+
             # Tier 3: content checks (most expensive, files only)
             if filters.has:  # Content filter exists
                 if is_file:

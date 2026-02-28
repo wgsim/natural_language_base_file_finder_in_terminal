@@ -8,6 +8,7 @@ import plistlib
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
+from difflib import SequenceMatcher
 from pathlib import Path
 
 # Maximum file size for content scanning (10 MB)
@@ -16,6 +17,14 @@ CONTENT_SCAN_CHUNK_BYTES = 64 * 1024
 MACOS_TAG_XATTR = "com.apple.metadata:_kMDItemUserTags"
 SHEBANG_PROBE_BYTES = 512
 LICENSE_SCAN_BYTES = 128 * 1024
+CODE_METRICS_SCAN_BYTES = 512 * 1024
+SIMILARITY_SCAN_BYTES = 512 * 1024
+DEFAULT_SIMILARITY_THRESHOLD = 0.55
+SIMILARITY_TOKEN_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+COMPLEXITY_TOKEN_PATTERN = re.compile(
+    r"\b(if|elif|for|while|except|case|catch|and|or)\b|&&|\|\|",
+    re.IGNORECASE,
+)
 
 _LANGUAGE_BY_EXTENSION = {
     ".py": "python",
@@ -308,6 +317,59 @@ def _detect_license(filepath: Path) -> str | None:
     return None
 
 
+def _parse_int_constraint(value: str) -> tuple[str, int] | None:
+    op, raw = _parse_constraint(value)
+    try:
+        parsed = int(raw)
+    except ValueError:
+        return None
+    if parsed < 0:
+        return None
+    return (op, parsed)
+
+
+def _matches_numeric_constraint(value: int, constraint: str) -> bool:
+    parsed = _parse_int_constraint(constraint)
+    if parsed is None:
+        return True
+    op, expected = parsed
+    if op == ">":
+        return value > expected
+    if op == "<":
+        return value < expected
+    return value == expected
+
+
+def _estimate_code_complexity(text: str) -> int:
+    hits = COMPLEXITY_TOKEN_PATTERN.findall(text)
+    # Baseline complexity is 1 for linear flow.
+    return 1 + len(hits)
+
+
+def _count_lines_of_code(text: str) -> int:
+    return sum(1 for line in text.splitlines() if line.strip())
+
+
+def _tokenize_for_similarity(text: str) -> set[str]:
+    tokens = {match.group(0).casefold() for match in SIMILARITY_TOKEN_PATTERN.finditer(text)}
+    if tokens:
+        return tokens
+    # Fallback to line chunks for non-code/text-light files.
+    return {line.strip().casefold() for line in text.splitlines() if line.strip()}
+
+
+def _compute_similarity_score(left: str, right: str) -> float:
+    left_tokens = _tokenize_for_similarity(left)
+    right_tokens = _tokenize_for_similarity(right)
+    if left_tokens and right_tokens:
+        union = left_tokens | right_tokens
+        if union:
+            overlap = left_tokens & right_tokens
+            return len(overlap) / len(union)
+    # Fallback to sequence similarity when tokenization is sparse.
+    return SequenceMatcher(None, left, right).ratio()
+
+
 @dataclass
 class SearchFilters:
     """Search filters extracted from natural language queries.
@@ -322,6 +384,9 @@ class SearchFilters:
     - mod_after, mod_before: Absolute modification date range constraints
     - size: File size constraints
     - has: Content matching (all terms must be present)
+    - similar: Similarity matching against a reference file
+    - loc: Lines-of-code constraint
+    - complexity: Approximate complexity constraint
     - lang, not_lang: Programming language filtering
     - license, not_license: License identifier filtering
     - tag: macOS Finder tags attached to files (all tags must be present)
@@ -350,6 +415,9 @@ class SearchFilters:
     mod_before: str | None = None
     size: str | None = None
     has: list[str] | None = None
+    similar: str | None = None
+    loc: str | None = None
+    complexity: str | None = None
     lang: list[str] | None = None
     not_lang: list[str] | None = None
     license: list[str] | None = None
@@ -365,6 +433,9 @@ class SearchFilters:
     _not_lang_normalized: frozenset[str] | None = field(default=None, init=False, repr=False)
     _license_normalized: frozenset[str] | None = field(default=None, init=False, repr=False)
     _not_license_normalized: frozenset[str] | None = field(default=None, init=False, repr=False)
+    _similar_text_cache: str | None = field(default=None, init=False, repr=False)
+    _similar_reference_path_cache: Path | None = field(default=None, init=False, repr=False)
+    _similar_resolved_failure: bool = field(default=False, init=False, repr=False)
 
     def __post_init__(self) -> None:
         """Pre-compile regex and normalize extension sets for performance and safety."""
@@ -402,6 +473,65 @@ class SearchFilters:
                 for value in self.not_license
                 if (normalized := _normalize_license_name(value))
             )
+
+    def _resolve_similar_reference_path(self, *, root: Path) -> Path | None:
+        if self.similar is None:
+            return None
+        if self._similar_resolved_failure:
+            return None
+        if self._similar_reference_path_cache is not None:
+            return self._similar_reference_path_cache
+
+        requested = self.similar.strip()
+        if not requested:
+            self._similar_resolved_failure = True
+            return None
+
+        candidate = Path(requested)
+        if candidate.is_absolute():
+            try:
+                resolved = candidate.resolve(strict=True)
+            except OSError:
+                self._similar_resolved_failure = True
+                return None
+            if resolved != root and root not in resolved.parents:
+                self._similar_resolved_failure = True
+                return None
+            self._similar_reference_path_cache = resolved
+            return resolved
+
+        root_candidate = (root / candidate).resolve(strict=False)
+        if root_candidate.is_file():
+            self._similar_reference_path_cache = root_candidate
+            return root_candidate
+
+        target_name = candidate.name
+        try:
+            for path in root.rglob(target_name):
+                if path.is_file():
+                    self._similar_reference_path_cache = path.resolve(strict=False)
+                    return self._similar_reference_path_cache
+        except OSError:
+            self._similar_resolved_failure = True
+            return None
+
+        self._similar_resolved_failure = True
+        return None
+
+    def _resolve_similar_reference_text(self, *, root: Path) -> str | None:
+        if self.similar is None:
+            return None
+        if self._similar_text_cache is not None:
+            return self._similar_text_cache
+        reference_path = self._resolve_similar_reference_path(root=root)
+        if reference_path is None:
+            return None
+        text = _read_text_sample(reference_path, max_bytes=SIMILARITY_SCAN_BYTES)
+        if text is None:
+            self._similar_resolved_failure = True
+            return None
+        self._similar_text_cache = text
+        return text
 
     def matches_name(self, filename: str) -> bool:
         # Use pre-computed extension sets for better performance
@@ -526,6 +656,36 @@ class SearchFilters:
         except (OSError, UnicodeDecodeError):
             return False
 
+    def matches_similarity(
+        self,
+        filepath: Path,
+        *,
+        root: Path,
+        follow_symlinks: bool = False,
+    ) -> bool:
+        if self.similar is None:
+            return True
+        reference_text = self._resolve_similar_reference_text(root=root)
+        reference_path = self._resolve_similar_reference_path(root=root)
+        if reference_text is None or reference_path is None:
+            return False
+        try:
+            candidate_path = filepath.resolve(strict=False)
+        except OSError:
+            return False
+        if candidate_path == reference_path:
+            return False
+        try:
+            if filepath.is_symlink() and not follow_symlinks:
+                return False
+        except OSError:
+            return False
+        candidate_text = _read_text_sample(filepath, max_bytes=SIMILARITY_SCAN_BYTES)
+        if candidate_text is None:
+            return False
+        score = _compute_similarity_score(reference_text, candidate_text)
+        return score >= DEFAULT_SIMILARITY_THRESHOLD
+
     def matches_tags(self, filepath: Path, *, follow_symlinks: bool = False) -> bool:
         if not self.tag:
             return True
@@ -539,6 +699,30 @@ class SearchFilters:
         if not present_tags:
             return False
         return requested.issubset(present_tags)
+
+    def matches_code_metrics(self, filepath: Path, *, follow_symlinks: bool = False) -> bool:
+        if self.loc is None and self.complexity is None:
+            return True
+        try:
+            if filepath.is_symlink() and not follow_symlinks:
+                return False
+            stat = filepath.stat()
+        except OSError:
+            return False
+        if stat.st_size > CODE_METRICS_SCAN_BYTES:
+            return False
+        text = _read_text_sample(filepath, max_bytes=CODE_METRICS_SCAN_BYTES)
+        if text is None:
+            return False
+        if self.loc is not None:
+            loc_value = _count_lines_of_code(text)
+            if not _matches_numeric_constraint(loc_value, self.loc):
+                return False
+        if self.complexity is not None:
+            complexity_value = _estimate_code_complexity(text)
+            if not _matches_numeric_constraint(complexity_value, self.complexity):
+                return False
+        return True
 
     def matches_language(self, filepath: Path, *, follow_symlinks: bool = False) -> bool:
         if self._lang_normalized is None and self._not_lang_normalized is None:

@@ -444,3 +444,227 @@ class TestSearchFilters:
         assert SearchFilters(not_lang=["python"]).matches_language(link) is True
         assert SearchFilters(license=["mit"]).matches_license(link) is False
         assert SearchFilters(not_license=["mit"]).matches_license(link) is True
+
+    def test_matches_code_metrics_loc_and_complexity_constraints(self, tmp_path):
+        f = tmp_path / "logic.py"
+        f.write_text(
+            "def f(x):\n"
+            "    if x > 0:\n"
+            "        return 1\n"
+            "    elif x < 0:\n"
+            "        return -1\n"
+            "    return 0\n"
+        )
+        assert SearchFilters(loc=">3").matches_code_metrics(f) is True
+        assert SearchFilters(loc="<3").matches_code_metrics(f) is False
+        assert SearchFilters(complexity=">2").matches_code_metrics(f) is True
+        assert SearchFilters(complexity="<2").matches_code_metrics(f) is False
+
+    def test_matches_code_metrics_invalid_constraint_is_ignored(self, tmp_path):
+        f = tmp_path / "logic.py"
+        f.write_text("print('ok')\n")
+        assert SearchFilters(loc="bad").matches_code_metrics(f) is True
+        assert SearchFilters(complexity="bad").matches_code_metrics(f) is True
+
+    def test_matches_code_metrics_symlink_branch(self, tmp_path):
+        target = tmp_path / "target.py"
+        target.write_text("print('ok')\n")
+        link = tmp_path / "link.py"
+        try:
+            link.symlink_to(target)
+        except (NotImplementedError, OSError):
+            pytest.skip("Symlinks are not supported in this test environment")
+        assert SearchFilters(loc=">0").matches_code_metrics(link) is False
+
+    def test_matches_similarity_with_reference_file(self, tmp_path):
+        reference = tmp_path / "auth.py"
+        reference.write_text("def login(user):\n    return check(user)\n")
+        candidate = tmp_path / "auth_clone.py"
+        candidate.write_text("def login(user):\n    return check(user)\n")
+        other = tmp_path / "other.py"
+        other.write_text("SELECT 1;\n")
+        filters = SearchFilters(similar="auth.py")
+        assert filters.matches_similarity(candidate, root=tmp_path) is True
+        assert filters.matches_similarity(other, root=tmp_path) is False
+        # Reference file itself should not be returned as "similar".
+        assert filters.matches_similarity(reference, root=tmp_path) is False
+
+    def test_matches_similarity_reference_resolution_failure(self, tmp_path):
+        candidate = tmp_path / "cand.py"
+        candidate.write_text("print('ok')\n")
+        filters = SearchFilters(similar="missing.py")
+        assert filters.matches_similarity(candidate, root=tmp_path) is False
+
+    def test_read_user_tags_xattr_without_getxattr_returns_empty(self, tmp_path, monkeypatch):
+        f = tmp_path / "note.txt"
+        f.write_text("x")
+        monkeypatch.delattr(filters_module.os, "getxattr", raising=False)
+        assert filters_module._read_user_tags_xattr(f, follow_symlinks=False) == set()
+
+    def test_detect_language_from_shebang_shell_unknown_and_oserror(self, tmp_path):
+        shell_script = tmp_path / "shell_script"
+        shell_script.write_text("#!/usr/bin/env zsh\n")
+        unknown_script = tmp_path / "unknown_script"
+        unknown_script.write_text("#!/usr/bin/env lua\n")
+        assert filters_module._detect_language_from_shebang(shell_script) == "shell"
+        assert filters_module._detect_language_from_shebang(unknown_script) is None
+        with patch("pathlib.Path.open", side_effect=OSError):
+            assert filters_module._detect_language_from_shebang(shell_script) is None
+
+    def test_detect_license_returns_none_for_empty_and_unmatched_content(self, tmp_path):
+        empty = tmp_path / "empty.txt"
+        empty.write_text("")
+        unknown = tmp_path / "unknown.txt"
+        unknown.write_text("some random text without license markers")
+        assert filters_module._detect_license(empty) is None
+        assert filters_module._detect_license(unknown) is None
+
+    def test_numeric_constraint_helpers_cover_negative_and_equal_paths(self):
+        assert filters_module._parse_int_constraint("-1") is None
+        assert filters_module._matches_numeric_constraint(5, "5") is True
+        assert filters_module._matches_numeric_constraint(6, "5") is False
+
+    def test_similarity_helpers_cover_token_and_sequence_fallback_paths(self):
+        assert filters_module._tokenize_for_similarity("###\n$$$") == {"###", "$$$"}
+        assert filters_module._compute_similarity_score("", "") == 1.0
+
+    def test_resolve_similar_reference_path_none_blank_absolute_and_nested(self, tmp_path):
+        root = tmp_path / "root"
+        root.mkdir()
+        inside = root / "inside.py"
+        inside.write_text("print('ok')\n")
+        outside = tmp_path / "outside.py"
+        outside.write_text("print('outside')\n")
+        nested = root / "pkg" / "needle.py"
+        nested.parent.mkdir()
+        nested.write_text("print('nested')\n")
+
+        assert SearchFilters()._resolve_similar_reference_path(root=root) is None
+
+        blank = SearchFilters(similar="   ")
+        assert blank._resolve_similar_reference_path(root=root) is None
+        assert blank._similar_resolved_failure is True
+
+        absolute_inside = SearchFilters(similar=str(inside.resolve()))
+        assert absolute_inside._resolve_similar_reference_path(root=root) == inside.resolve()
+
+        absolute_outside = SearchFilters(similar=str(outside.resolve()))
+        assert absolute_outside._resolve_similar_reference_path(root=root) is None
+        assert absolute_outside._similar_resolved_failure is True
+
+        nested_lookup = SearchFilters(similar="needle.py")
+        assert nested_lookup._resolve_similar_reference_path(root=root) == nested.resolve()
+
+    def test_resolve_similar_reference_path_handles_rglob_oserror(self, tmp_path, monkeypatch):
+        root = tmp_path / "root"
+        root.mkdir()
+        original_rglob = filters_module.Path.rglob
+
+        def failing_rglob(self, pattern):
+            if self == root:
+                raise OSError("simulated rglob failure")
+            return original_rglob(self, pattern)
+
+        monkeypatch.setattr(filters_module.Path, "rglob", failing_rglob)
+
+        filters = SearchFilters(similar="missing.py")
+        assert filters._resolve_similar_reference_path(root=root) is None
+        assert filters._similar_resolved_failure is True
+
+    def test_resolve_similar_reference_text_none_and_unreadable(self, tmp_path):
+        root = tmp_path / "root"
+        root.mkdir()
+        assert SearchFilters()._resolve_similar_reference_text(root=root) is None
+
+        reference = root / "empty.py"
+        reference.write_text("")
+        filters = SearchFilters(similar="empty.py")
+        assert filters._resolve_similar_reference_text(root=root) is None
+        assert filters._similar_resolved_failure is True
+
+    def test_matches_similarity_handles_candidate_resolve_error(self, tmp_path, monkeypatch):
+        reference = tmp_path / "ref.py"
+        reference.write_text("def f():\n    return 1\n")
+        candidate = tmp_path / "cand.py"
+        candidate.write_text("def f():\n    return 1\n")
+
+        filters = SearchFilters(similar="ref.py")
+        filters._similar_reference_path_cache = reference.resolve(strict=False)
+        filters._similar_text_cache = "def f():\n    return 1\n"
+
+        original_resolve = filters_module.Path.resolve
+
+        def failing_resolve(self, *args, **kwargs):
+            if self == candidate:
+                raise OSError("simulated resolve failure")
+            return original_resolve(self, *args, **kwargs)
+
+        monkeypatch.setattr(filters_module.Path, "resolve", failing_resolve)
+        assert filters.matches_similarity(candidate, root=tmp_path) is False
+
+    def test_matches_similarity_handles_symlink_check_error_and_empty_candidate(
+        self, tmp_path, monkeypatch
+    ):
+        reference = tmp_path / "ref.py"
+        reference.write_text("def f():\n    return 1\n")
+        candidate = tmp_path / "cand.py"
+        candidate.write_text("def f():\n    return 1\n")
+
+        filters = SearchFilters(similar="ref.py")
+        filters._similar_reference_path_cache = reference.resolve(strict=False)
+        filters._similar_text_cache = "def f():\n    return 1\n"
+
+        original_is_symlink = filters_module.Path.is_symlink
+
+        def failing_is_symlink(self):
+            if self == candidate:
+                raise OSError("simulated symlink failure")
+            return original_is_symlink(self)
+
+        monkeypatch.setattr(filters_module.Path, "is_symlink", failing_is_symlink)
+        assert filters.matches_similarity(candidate, root=tmp_path) is False
+
+        empty_candidate = tmp_path / "empty.py"
+        empty_candidate.write_text("")
+        filters2 = SearchFilters(similar="ref.py")
+        filters2._similar_reference_path_cache = reference.resolve(strict=False)
+        filters2._similar_text_cache = "def f():\n    return 1\n"
+        assert filters2.matches_similarity(empty_candidate, root=tmp_path) is False
+
+    def test_matches_code_metrics_error_and_boundary_paths(self, tmp_path, monkeypatch):
+        candidate = tmp_path / "candidate.py"
+        candidate.write_text("print('ok')\n")
+        original_is_symlink = filters_module.Path.is_symlink
+
+        def failing_is_symlink(self):
+            if self == candidate:
+                raise OSError("simulated symlink failure")
+            return original_is_symlink(self)
+
+        monkeypatch.setattr(filters_module.Path, "is_symlink", failing_is_symlink)
+        assert SearchFilters(loc=">0").matches_code_metrics(candidate) is False
+
+        large = tmp_path / "large.py"
+        large.write_bytes(b"x" * (filters_module.CODE_METRICS_SCAN_BYTES + 1))
+        assert SearchFilters(loc=">0").matches_code_metrics(large) is False
+
+        empty = tmp_path / "empty.py"
+        empty.write_text("")
+        assert SearchFilters(loc=">0").matches_code_metrics(empty) is False
+
+    def test_matches_language_and_license_handle_symlink_oserror(self, tmp_path, monkeypatch):
+        file_path = tmp_path / "app.py"
+        file_path.write_text("# SPDX-License-Identifier: MIT\nprint('ok')\n")
+        original_is_symlink = filters_module.Path.is_symlink
+
+        def failing_is_symlink(self):
+            if self == file_path:
+                raise OSError("simulated symlink failure")
+            return original_is_symlink(self)
+
+        monkeypatch.setattr(filters_module.Path, "is_symlink", failing_is_symlink)
+
+        assert SearchFilters(lang=["python"]).matches_language(file_path) is False
+        assert SearchFilters(not_lang=["python"]).matches_language(file_path) is True
+        assert SearchFilters(license=["mit"]).matches_license(file_path) is False
+        assert SearchFilters(not_license=["mit"]).matches_license(file_path) is True
