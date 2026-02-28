@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.9** (Current) - Incremental early termination, index runtime stats, and script lint gate
+- **v0.1.10** (Current) - Archive stage 2 (`has` content matching inside `.zip`/`.tar.gz`) and walker archive scan refactor
+- **v0.1.9** - Incremental early termination, index runtime stats, and script lint gate
 - **v0.1.8** - Runtime index query path and persistent LLM memoization
 - **v0.1.7** - Index commands, LLM memoization, and CI perf regression gate
 - **v0.1.6** - Cache observability and interactive cache parity
@@ -34,7 +35,7 @@
 - [x] Symbolic link following options (`--follow-symlinks`, root-bounded)
 - [ ] Extended attribute filtering (macOS tags, file labels)
 - [x] Binary file detection and exclusion (default on, `--include-binary` to override)
-- [x] Archive file support (stage 1: search by entry path/name inside .zip, .tar.gz)
+- [x] Archive file support (stage 2: search by entry path/name and `has` content inside .zip, .tar.gz)
 
 #### Filter Improvements
 - [x] Date range queries ("between Jan 1 and Jan 15")
@@ -188,7 +189,7 @@
 
 ## Known Limitations
 
-### Current v0.1.9 Limitations
+### Current v0.1.10 Limitations
 
 1. **LLM Dependency**: Requires internet connection and API key
    - *Future*: Offline mode with rule-based fallback

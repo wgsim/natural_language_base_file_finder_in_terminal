@@ -10,13 +10,15 @@ from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from collections.abc import Generator
 from dataclasses import dataclass
 from pathlib import Path
+from typing import IO
 
-from askfind.search.filters import SearchFilters
+from askfind.search.filters import CONTENT_SCAN_CHUNK_BYTES, MAX_CONTENT_SCAN_BYTES, SearchFilters
 
 SKIP_DIRS = {".git", ".venv", "node_modules", "__pycache__", ".hg", ".svn"}
 IGNORE_FILES = (".gitignore", ".askfindignore")
 BINARY_PROBE_BYTES = 4096
 ARCHIVE_SUFFIXES = (".zip", ".tar.gz")
+ARCHIVE_MEMBER_PATH_DELIMITER = "::"
 
 
 @dataclass(frozen=True)
@@ -158,29 +160,121 @@ def _is_supported_archive(path: Path, *, is_file: bool) -> bool:
     return any(lowered.endswith(suffix) for suffix in ARCHIVE_SUFFIXES)
 
 
-def _iter_archive_member_paths(path: Path) -> list[str]:
-    lowered = path.name.lower()
+def _member_matches_name_and_path(
+    *,
+    archive_path: Path,
+    member_path: str,
+    filters: SearchFilters,
+) -> bool:
+    member_name = Path(member_path).name
+    synthetic_path = (
+        f"{archive_path.as_posix()}{ARCHIVE_MEMBER_PATH_DELIMITER}{member_path}"
+    )
+    if not filters.matches_name(member_name):
+        return False
+    if not filters.matches_path(synthetic_path):
+        return False
+    return True
+
+
+def _stream_contains_all_terms(handle: IO[bytes], terms: list[str]) -> bool:
+    pending_terms = set(terms)
+    max_term_len = max(len(term) for term in pending_terms)
+    overlap = max(0, max_term_len - 1)
+    tail = ""
+
+    while True:
+        chunk = handle.read(CONTENT_SCAN_CHUNK_BYTES)
+        if not chunk:
+            break
+        text = tail + chunk.decode("utf-8", errors="ignore")
+        matched = {term for term in pending_terms if term in text}
+        pending_terms -= matched
+        if not pending_terms:
+            return True
+        tail = text[-overlap:] if overlap else ""
+    return False
+
+
+def _zip_archive_matches_filters(archive_path: Path, filters: SearchFilters) -> bool:
     try:
-        if lowered.endswith(".zip"):
-            with zipfile.ZipFile(path, "r") as handle:
-                return [info.filename for info in handle.infolist() if not info.is_dir()]
-        if lowered.endswith(".tar.gz"):
-            with tarfile.open(path, "r:gz") as handle:
-                return [member.name for member in handle.getmembers() if member.isfile()]
-    except (OSError, zipfile.BadZipFile, tarfile.TarError):
-        return []
-    return []
+        with zipfile.ZipFile(archive_path, "r") as handle:
+            for info in handle.infolist():
+                if info.is_dir():
+                    continue
+                member_path = info.filename
+                if not _member_matches_name_and_path(
+                    archive_path=archive_path,
+                    member_path=member_path,
+                    filters=filters,
+                ):
+                    continue
+                if not filters.has:
+                    return True
+                if info.file_size > MAX_CONTENT_SCAN_BYTES:
+                    continue
+                try:
+                    with handle.open(info, "r") as member_handle:
+                        if _stream_contains_all_terms(member_handle, filters.has):
+                            return True
+                except OSError:
+                    continue
+    except (OSError, zipfile.BadZipFile):
+        return False
+    return False
+
+
+def _tar_gz_archive_matches_filters(archive_path: Path, filters: SearchFilters) -> bool:
+    try:
+        with tarfile.open(archive_path, "r:gz") as handle:
+            for member in handle.getmembers():
+                if not member.isfile():
+                    continue
+                member_path = member.name
+                if not _member_matches_name_and_path(
+                    archive_path=archive_path,
+                    member_path=member_path,
+                    filters=filters,
+                ):
+                    continue
+                if not filters.has:
+                    return True
+                if member.size > MAX_CONTENT_SCAN_BYTES:
+                    continue
+                try:
+                    extracted = handle.extractfile(member)
+                except (tarfile.TarError, OSError):
+                    continue
+                if extracted is None:
+                    continue
+                with extracted:
+                    if _stream_contains_all_terms(extracted, filters.has):
+                        return True
+    except (OSError, tarfile.TarError):
+        return False
+    return False
+
+
+def _should_scan_archive_members(
+    *,
+    search_archives: bool,
+    supported_archive: bool,
+    direct_match: bool,
+    has_content_filter: bool,
+) -> bool:
+    if not search_archives or not supported_archive:
+        return False
+    if has_content_filter:
+        return True
+    return not direct_match
 
 
 def _archive_matches_filters(archive_path: Path, filters: SearchFilters) -> bool:
-    for member_path in _iter_archive_member_paths(archive_path):
-        member_name = Path(member_path).name
-        synthetic_path = f"{archive_path.as_posix()}::{member_path}"
-        if not filters.matches_name(member_name):
-            continue
-        if not filters.matches_path(synthetic_path):
-            continue
-        return True
+    lowered = archive_path.name.lower()
+    if lowered.endswith(".zip"):
+        return _zip_archive_matches_filters(archive_path, filters)
+    if lowered.endswith(".tar.gz"):
+        return _tar_gz_archive_matches_filters(archive_path, filters)
     return False
 
 
@@ -310,12 +404,13 @@ def _scan_directory(
             direct_name_match = filters.matches_name(entry.name)
             direct_path_match = filters.matches_path(str(entry_path))
             direct_match = direct_name_match and direct_path_match
+            supported_archive = _is_supported_archive(entry_path, is_file=is_file)
             archive_match = False
-            if (
-                search_archives
-                and not direct_match
-                and not filters.has
-                and _is_supported_archive(entry_path, is_file=is_file)
+            if _should_scan_archive_members(
+                search_archives=search_archives,
+                supported_archive=supported_archive,
+                direct_match=direct_match,
+                has_content_filter=bool(filters.has),
             ):
                 archive_match = _archive_matches_filters(entry_path, filters)
 
@@ -340,11 +435,15 @@ def _scan_directory(
             # Tier 3: content checks (most expensive, files only)
             if filters.has:  # Content filter exists
                 if is_file:
-                    if not filters.matches_content(
-                        entry_path,
-                        follow_symlinks=follow_symlinks,
-                    ):
-                        continue
+                    if supported_archive and search_archives:
+                        if not archive_match:
+                            continue
+                    else:
+                        if not filters.matches_content(
+                            entry_path,
+                            follow_symlinks=follow_symlinks,
+                        ):
+                            continue
                     matched_paths.append(entry_path)
                     if remaining_matches is not None and len(matched_paths) >= remaining_matches:
                         break

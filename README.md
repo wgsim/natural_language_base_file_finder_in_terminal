@@ -12,6 +12,7 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 🙈 **Ignore-Aware Traversal** - Respects `.gitignore` and `.askfindignore` by default
 - 🔗 **Safe Symlink Traversal** - Optional `--follow-symlinks` follows links only inside search root
 - 🧪 **Binary File Exclusion** - Binary files are excluded by default (override with `--include-binary`)
+- 📦 **Archive-Aware Matching** - Optional archive entry path/name and content (`has`) matching for `.zip` / `.tar.gz`
 - 💾 **Search Cache** - Reuses recent query results (disable per run with `--no-cache`, inspect cache/index runtime counters with `--cache-stats`)
 - 🗂️ **Index Management** - Build/update/status/clear optional per-root file indexes
 - 🧠 **LLM Filter Memoization** - Reuses repeated filter-extraction calls (in-memory + disk cache)
@@ -91,7 +92,7 @@ askfind "python files" --follow-symlinks
 # Include binary files in results
 askfind "files in build output" --include-binary
 
-# Search inside archive entries by path/name (.zip, .tar.gz)
+# Search inside archive entries by path/name and content (`has`) (.zip, .tar.gz)
 askfind "python files in archives" --search-archives
 ```
 
@@ -150,7 +151,7 @@ askfind config models
    By default, traversal respects root `.gitignore` and `.askfindignore`. Use `--no-ignore` to disable this behavior.
    Binary files are excluded by default to reduce noisy results. Use `--include-binary` when needed.
    Symlinks are not followed unless `--follow-symlinks` is set.
-   Archive entry path/name matching is available with `--search-archives`.
+   Archive entry path/name and `has` content matching are available with `--search-archives`.
    Search results are cached by default. Use `--no-cache` to bypass cache for one command, or `--cache-stats` to print cache hit/miss/set counters and index hit/fallback reasons.
 
 3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance
