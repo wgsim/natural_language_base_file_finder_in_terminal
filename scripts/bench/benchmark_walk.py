@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import statistics
 import time
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 from askfind.search.filters import SearchFilters
@@ -79,12 +81,62 @@ def _parse_args() -> argparse.Namespace:
         help="Include binary files (default excludes binary files)",
     )
     parser.add_argument("--json", action="store_true", dest="json_output", help="Emit JSON output")
+    parser.add_argument(
+        "--output-json",
+        default=None,
+        help="Write benchmark result payload JSON to file",
+    )
+    parser.add_argument(
+        "--output-csv",
+        default=None,
+        help="Write benchmark result rows CSV to file",
+    )
     args = parser.parse_args()
     if args.repeats < 1:
         parser.error("--repeats must be >= 1")
     if args.workers < 1:
         parser.error("--workers must be >= 1")
     return args
+
+
+def _build_payload(*, root: Path, args: argparse.Namespace, rows: list[dict[str, object]]) -> dict[str, object]:
+    return {
+        "benchmark_version": 1,
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "root": str(root),
+        "parameters": {
+            "repeats": args.repeats,
+            "max_results": args.max_results,
+            "workers": args.workers,
+            "follow_symlinks": args.follow_symlinks,
+            "include_binary": args.include_binary,
+        },
+        "results": rows,
+    }
+
+
+def _write_json_payload(path: Path, payload: dict[str, object]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+
+def _write_csv_rows(path: Path, rows: list[dict[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "scenario",
+                "runs",
+                "min_s",
+                "median_s",
+                "mean_s",
+                "max_s",
+                "result_count",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(rows)
 
 
 def main() -> int:
@@ -120,8 +172,14 @@ def main() -> int:
         }
         rows.append(row)
 
+    payload = _build_payload(root=root, args=args, rows=rows)
+    if args.output_json:
+        _write_json_payload(Path(args.output_json), payload)
+    if args.output_csv:
+        _write_csv_rows(Path(args.output_csv), rows)
+
     if args.json_output:
-        print(json.dumps({"root": str(root), "results": rows}, indent=2))
+        print(json.dumps(payload, indent=2))
         return 0
 
     print(f"Benchmark root: {root}")

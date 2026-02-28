@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.15] - 2026-02-28
+
+### Added
+- Added benchmark artifact outputs to `scripts/bench/benchmark_walk.py`:
+  - `--output-json` for structured benchmark payload files
+  - `--output-csv` for tabular benchmark rows
+- Added benchmark comparison utility: `scripts/bench/compare_benchmark_results.py`
+  - compares baseline/candidate JSON or CSV benchmark files
+  - reports per-scenario ratios and returns non-zero on regression
+- Added benchmark script tests:
+  - `tests/test_benchmark_walk_script.py`
+  - `tests/test_compare_benchmark_results.py`
+- Added 4-sample measured baseline report:
+  - `docs/benchmark-baseline-2026-02-28.md`
+  - raw artifacts under `docs/benchmarks/2026-02-28/`
+
+### Changed
+- Updated LLM prompt guidance to state that similarity cutoff is runtime-controlled (`similarity_threshold` / `--similarity-threshold`) and should not be emitted by the model.
+- Updated package version metadata to `0.1.15`.
+
 ## [0.1.14] - 2026-02-28
 
 ### Added

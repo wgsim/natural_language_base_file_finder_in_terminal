@@ -317,6 +317,12 @@ CI additionally validates index-query performance parity via
 # Traversal baseline (no LLM calls)
 PYTHONPATH=src python scripts/bench/benchmark_walk.py --root . --repeats 5 --workers 4
 
+# Persist benchmark artifacts for later comparison
+PYTHONPATH=src python scripts/bench/benchmark_walk.py --root . --repeats 5 --workers 4 --output-json /tmp/askfind-bench.json --output-csv /tmp/askfind-bench.csv
+
+# Compare baseline and candidate benchmark outputs
+python scripts/bench/compare_benchmark_results.py --baseline /tmp/bench-baseline.json --candidate /tmp/bench-candidate.json --metric median_s --ratio-threshold 1.35
+
 # CI-style performance regression check (parallel vs sequential median ratio)
 PYTHONPATH=src python scripts/ci/benchmark_regression_gate.py --root .
 
@@ -329,6 +335,9 @@ PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root . --index
 
 For reproducible multi-repo benchmark plans, see:
 `docs/BENCHMARK_SCENARIOS.md`
+
+Latest captured baseline:
+`docs/benchmark-baseline-2026-02-28.md`
 
 ### Git Hooks
 
