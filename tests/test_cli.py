@@ -371,6 +371,80 @@ class TestMainIntegration:
         assert str(mit_file) in captured.out
         assert str(apache_file) not in captured.out
 
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode_similarity_filter(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        reference = tmp_path / "auth.py"
+        reference.write_text("def login(user):\n    return check(user)\n")
+        similar = tmp_path / "auth_copy.py"
+        similar.write_text("def login(user):\n    return check(user)\n")
+        different = tmp_path / "other.py"
+        different.write_text("SELECT 1;\n")
+
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"type":"file","similar":"auth.py"}',
+        )
+
+        result = main(
+            [
+                "files similar to auth.py",
+                "--root",
+                str(tmp_path),
+                "--no-rerank",
+                "--no-cache",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(similar) in captured.out
+        assert str(different) not in captured.out
+        assert str(reference) not in captured.out
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_single_command_mode_code_metrics_filter(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        simple = tmp_path / "simple.py"
+        simple.write_text("print('ok')\n")
+        branchy = tmp_path / "branchy.py"
+        branchy.write_text(
+            "def f(x):\n"
+            "    if x > 0:\n"
+            "        return 1\n"
+            "    elif x < 0:\n"
+            "        return -1\n"
+            "    return 0\n"
+        )
+
+        mock_config_cls.return_value = _make_mock_config(default_root=tmp_path)
+        _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"type":"file","loc":">3","complexity":">2"}',
+        )
+
+        result = main(
+            [
+                "complex python files",
+                "--root",
+                str(tmp_path),
+                "--no-rerank",
+                "--no-cache",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(branchy) in captured.out
+        assert str(simple) not in captured.out
+
     @patch("askfind.cli.walk_and_filter")
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")

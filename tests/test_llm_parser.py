@@ -91,6 +91,17 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters.license == ["mit"]
 
+    def test_similar_as_string(self):
+        raw = '{"similar": "auth.py"}'
+        filters = parse_llm_response(raw)
+        assert filters.similar == "auth.py"
+
+    def test_loc_and_complexity_constraints(self):
+        raw = '{"loc": ">200", "complexity": "<15"}'
+        filters = parse_llm_response(raw)
+        assert filters.loc == ">200"
+        assert filters.complexity == "<15"
+
     def test_ext_as_single_string_converted_to_list(self):
         raw = '{"ext": ".py"}'
         filters = parse_llm_response(raw)
@@ -168,12 +179,13 @@ class TestParseLlmResponse:
         assert filters.type is None
 
     def test_rejects_non_string_name_fields(self):
-        raw = '{"name": 1, "not_name": 2, "regex": 3, "fuzzy": 4}'
+        raw = '{"name": 1, "not_name": 2, "regex": 3, "fuzzy": 4, "similar": 5}'
         filters = parse_llm_response(raw)
         assert filters.name is None
         assert filters.not_name is None
         assert filters.regex is None
         assert filters.fuzzy is None
+        assert filters.similar is None
 
     def test_rejects_non_string_type_perm_depth_size_mod(self):
         raw = '{"type": 1, "perm": 2, "depth": 3, "size": 4, "mod": 5, "mod_after": 6, "mod_before": 7}'
@@ -193,6 +205,33 @@ class TestParseLlmResponse:
         assert filters.not_lang is None
         assert filters.license is None
         assert filters.not_license is None
+
+    def test_rejects_invalid_loc_and_complexity_constraints(self):
+        raw = '{"loc": "many", "complexity": ">"}'
+        filters = parse_llm_response(raw)
+        assert filters.loc is None
+        assert filters.complexity is None
+
+    def test_accepts_valid_path_size_and_metric_constraints(self):
+        raw = '{"path": "src/utils", "size": ">10KB", "loc": "10", "complexity": "<3"}'
+        filters = parse_llm_response(raw)
+        assert filters.path == "src/utils"
+        assert filters.size == ">10KB"
+        assert filters.loc == "10"
+        assert filters.complexity == "<3"
+
+    def test_rejects_out_of_range_metric_and_absolute_year_values(self):
+        raw = '{"loc": "1000001", "mod_after": "1969-12-31", "mod_before": "3000-01-01"}'
+        filters = parse_llm_response(raw)
+        assert filters.loc is None
+        assert filters.mod_after is None
+        assert filters.mod_before is None
+
+    def test_rejects_non_string_loc_and_complexity(self):
+        raw = '{"loc": 10, "complexity": 3}'
+        filters = parse_llm_response(raw)
+        assert filters.loc is None
+        assert filters.complexity is None
 
     def test_rejects_invalid_permission_values(self):
         raw = '{"perm": "rwa"}'
@@ -282,6 +321,10 @@ class TestParseLlmResponse:
         raw = 'prefix {"ext": [".py"]'
         filters = parse_llm_response(raw)
         assert filters == SearchFilters()
+
+    def test_markdown_json_array_hits_non_object_branch(self):
+        raw = "```json\n[1, 2, 3]\n```"
+        assert parse_llm_response(raw) == SearchFilters()
 
     def test_unknown_key_type_branch_returns_none(self):
         assert _validate_and_sanitize_value("unknown_key", "value") is None

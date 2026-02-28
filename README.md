@@ -178,6 +178,9 @@ askfind understands these filter types:
 | `mod_before` | `2026-01-15` | Modified up to absolute date (inclusive for date-only) |
 | `size` | `>1MB` | File size constraint |
 | `has` | `["TODO"]` | File content must contain terms |
+| `similar` | `auth.py` | Files with content similar to the reference file |
+| `loc` | `>200` | Non-empty line count constraint |
+| `complexity` | `>15` | Approximate complexity constraint |
 | `lang` | `["python"]` | Programming language(s) to include |
 | `not_lang` | `["javascript"]` | Programming language(s) to exclude |
 | `license` | `["mit"]` | License identifier(s) to include |

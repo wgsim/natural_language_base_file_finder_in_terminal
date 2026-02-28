@@ -22,6 +22,7 @@ _MAX_MOD_DELTA = timedelta(days=36500)  # ~100 years
 _MIN_MOD_YEAR = 1970
 _MAX_FUTURE_YEARS = 10
 _DATE_ONLY_PATTERN = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_MAX_METRIC_LIMIT = 1_000_000
 
 
 def _split_constraint(value: str) -> tuple[str, str]:
@@ -41,6 +42,19 @@ def _validate_depth_value(value: str) -> str | None:
     if depth < 0 or depth > _MAX_DEPTH:
         return None
     return f"{op}{depth}" if op else str(depth)
+
+
+def _validate_metric_constraint_value(value: str) -> str | None:
+    op, raw = _split_constraint(value.strip())
+    if not raw:
+        return None
+    try:
+        metric = int(raw)
+    except ValueError:
+        return None
+    if metric < 0 or metric > _MAX_METRIC_LIMIT:
+        return None
+    return f"{op}{metric}" if op else str(metric)
 
 
 def _validate_size_value(value: str) -> str | None:
@@ -125,7 +139,7 @@ def _validate_and_sanitize_value(key: str, value: Any) -> Any | None:
             return None
 
     # Validate string fields
-    if key in ("name", "not_name", "regex", "fuzzy"):
+    if key in ("name", "not_name", "regex", "fuzzy", "similar"):
         if not isinstance(value, str):
             return None
         return str(value).strip()[:_MAX_TERM_LENGTH]
@@ -151,6 +165,11 @@ def _validate_and_sanitize_value(key: str, value: Any) -> Any | None:
         if not isinstance(value, str):
             return None
         return _validate_depth_value(value)
+
+    if key in {"loc", "complexity"}:
+        if not isinstance(value, str):
+            return None
+        return _validate_metric_constraint_value(value)
 
     if key == "size":
         if not isinstance(value, str):

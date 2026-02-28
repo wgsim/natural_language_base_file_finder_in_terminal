@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.13] - 2026-02-28
+
+### Added
+- Added similarity filtering support via `similar` query filter.
+- Added code metrics filtering support via `loc` and `complexity` query filters.
+- Added parser/prompt support and tests for similarity/code-metrics filters.
+
+### Changed
+- Search pipeline now applies similarity and code-metrics filters in both traversal and index-query paths.
+- Updated package version metadata to `0.1.13`.
+
 ## [0.1.12] - 2026-02-28
 
 ### Added

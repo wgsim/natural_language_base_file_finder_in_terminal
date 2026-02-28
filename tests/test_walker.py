@@ -733,6 +733,56 @@ class TestWalkAndFilter:
         assert mit_file in results
         assert apache_file not in results
 
+    def test_similarity_filter_matches_files_similar_to_reference(self, tmp_path):
+        reference = tmp_path / "auth.py"
+        reference.write_text("def login(user):\n    return check(user)\n")
+        similar = tmp_path / "auth_copy.py"
+        similar.write_text("def login(user):\n    return check(user)\n")
+        different = tmp_path / "other.py"
+        different.write_text("SELECT 1;\n")
+
+        results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", similar="auth.py"),
+            )
+        )
+
+        assert similar in results
+        assert different not in results
+        assert reference not in results
+
+    def test_code_metrics_filters_loc_and_complexity(self, tmp_path):
+        simple = tmp_path / "simple.py"
+        simple.write_text("print('ok')\n")
+        branchy = tmp_path / "branchy.py"
+        branchy.write_text(
+            "def f(x):\n"
+            "    if x > 0:\n"
+            "        return 1\n"
+            "    elif x < 0:\n"
+            "        return -1\n"
+            "    return 0\n"
+        )
+
+        loc_results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", loc=">3"),
+            )
+        )
+        complexity_results = list(
+            walk_and_filter(
+                tmp_path,
+                SearchFilters(type="file", complexity=">2"),
+            )
+        )
+
+        assert branchy in loc_results
+        assert simple not in loc_results
+        assert branchy in complexity_results
+        assert simple not in complexity_results
+
     def test_max_results_stops_scandir_iteration_early_sequential(self, tmp_path, monkeypatch):
         for idx in range(10):
             (tmp_path / f"file_{idx}.txt").write_text("text")
