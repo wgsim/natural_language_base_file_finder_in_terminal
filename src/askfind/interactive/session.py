@@ -14,11 +14,12 @@ from rich.table import Table
 from askfind.config import Config, get_api_key
 from askfind.interactive.commands import copy_content, copy_path, open_in_editor, preview
 from askfind.llm.client import LLMClient
+from askfind.llm.fallback import has_meaningful_filters, parse_query_fallback
 from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import get_logger
 from askfind.output.formatter import FileResult, human_size
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
-from askfind.search.filters import DEFAULT_SIMILARITY_THRESHOLD
+from askfind.search.filters import DEFAULT_SIMILARITY_THRESHOLD, SearchFilters
 from askfind.search.walker import walk_and_filter
 
 console = Console()
@@ -197,8 +198,23 @@ class InteractiveSession:
                 self.results = []
 
             if cached_paths is None:
-                raw = self.client.extract_filters(query)
-                filters = parse_llm_response(raw)
+                fallback_used = False
+                try:
+                    raw = self.client.extract_filters(query)
+                    filters = parse_llm_response(raw)
+                    if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
+                        fallback_filters = parse_query_fallback(query)
+                        if has_meaningful_filters(fallback_filters):
+                            filters = fallback_filters
+                            fallback_used = True
+                except httpx.HTTPError:
+                    fallback_filters = parse_query_fallback(query)
+                    if has_meaningful_filters(fallback_filters):
+                        filters = fallback_filters
+                        fallback_used = True
+                    else:
+                        raise
+
                 if hasattr(filters, "similarity_threshold"):
                     filters.similarity_threshold = similarity_threshold
                 paths = list(
@@ -214,6 +230,8 @@ class InteractiveSession:
                     )
                 )
                 self.results = [FileResult.from_path(p) for p in paths]
+                if fallback_used:
+                    console.print("[yellow]Warning: LLM unavailable; using heuristic fallback filters.[/yellow]")
 
                 if self.cache is not None and cache_key is not None and root_fingerprint is not None:
                     try:

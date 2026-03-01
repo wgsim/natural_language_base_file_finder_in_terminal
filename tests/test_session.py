@@ -3,6 +3,8 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import httpx
+
 from askfind.interactive.session import HELP_TEXT, InteractiveSession
 from askfind.output.formatter import FileResult
 from rich.table import Table
@@ -666,3 +668,36 @@ class TestInteractiveSessionSearch:
             root_fingerprint="root-fp",
             paths=[file_path],
         )
+
+    @patch("askfind.interactive.session.console.print")
+    @patch("askfind.interactive.session.walk_and_filter")
+    def test_search_uses_heuristic_fallback_when_llm_http_error(self, mock_walk, mock_print, tmp_path):
+        file_path = tmp_path / "fallback.py"
+        file_path.write_text("print('fallback')\n")
+
+        session = InteractiveSession.__new__(InteractiveSession)
+        session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
+            editor="vim",
+            max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+            parallel_workers=4,
+        )
+        session.root = tmp_path.resolve()
+        session.results = []
+        session.cache = None
+        session.client = MagicMock()
+        session.client.extract_filters.side_effect = httpx.ConnectError("offline")
+        mock_walk.return_value = [file_path]
+
+        session._search("python files")
+
+        assert len(session.results) == 1
+        inferred_filters = mock_walk.call_args.args[1]
+        assert inferred_filters.ext == [".py"]
+        mock_print.assert_any_call("[yellow]Warning: LLM unavailable; using heuristic fallback filters.[/yellow]")

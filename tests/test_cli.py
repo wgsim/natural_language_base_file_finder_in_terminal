@@ -1409,6 +1409,38 @@ class TestMainAdditionalBranches:
         mock_format_json.assert_not_called()
         mock_format_plain.assert_not_called()
 
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_http_error_uses_heuristic_fallback_for_parseable_query(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        py_file = tmp_path / "matched.py"
+        py_file.write_text("print('ok')\n")
+        txt_file = tmp_path / "note.txt"
+        txt_file.write_text("hello\n")
+
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls, extract_side_effect=httpx.ConnectError("offline"))
+
+        result = main(
+            [
+                "python files",
+                "--root",
+                str(tmp_path),
+                "--no-cache",
+                "--no-rerank",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(py_file) in captured.out
+        assert str(txt_file) not in captured.out
+        assert "heuristic fallback" in captured.err.lower()
+
 
 class TestIndexSubcommand:
     @patch("askfind.cli.build_index")
