@@ -34,9 +34,39 @@ _MEANINGFUL_FILTER_FIELDS = (
 _EXTENSION_PATTERN = re.compile(r"(?<!\w)\.([a-z0-9]{1,12})\b")
 _HAS_CLAUSE_PATTERN = re.compile(r"\b(?:contain|contains|containing|with|has)\b(?P<tail>.+)", re.IGNORECASE)
 _PATH_PATTERN = re.compile(r"\b(?:in|under|inside)\s+([A-Za-z0-9_./-]+)", re.IGNORECASE)
+_NOT_PATH_PATTERN = re.compile(r"\b(?:excluding|exclude|without|except|not in)\s+([A-Za-z0-9_./-]+)", re.IGNORECASE)
 _NAME_PATTERN = re.compile(r"\bnamed\s+([A-Za-z0-9*._-]+)", re.IGNORECASE)
 _QUOTED_TERM_PATTERN = re.compile(r'"([^"]+)"|\'([^\']+)\'')
 _HAS_MARKERS = ("todo", "fixme", "hack", "bug", "xxx", "note")
+_SIZE_GREATER_PATTERN = re.compile(
+    r"\b(?:larger than|bigger than|greater than|more than|over|above)\s+"
+    r"(\d+(?:\.\d+)?)\s*(kb|mb|gb|tb|b)?\b",
+    re.IGNORECASE,
+)
+_SIZE_LESS_PATTERN = re.compile(
+    r"\b(?:smaller than|less than|under|below)\s+(\d+(?:\.\d+)?)\s*(kb|mb|gb|tb|b)?\b",
+    re.IGNORECASE,
+)
+_MOD_LAST_WINDOW_PATTERN = re.compile(
+    r"\b(?:last|past)\s+(\d+)\s*(minute|minutes|hour|hours|day|days|week|weeks|month|months)\b",
+    re.IGNORECASE,
+)
+_PATH_STOPWORDS = {
+    "last",
+    "past",
+    "today",
+    "yesterday",
+    "week",
+    "month",
+    "day",
+    "hour",
+    "days",
+    "weeks",
+    "months",
+    "hours",
+    "minutes",
+    "minute",
+}
 _LANGUAGE_EXTENSION_HINTS = (
     ("python", (".py",)),
     ("javascript", (".js",)),
@@ -74,21 +104,27 @@ def parse_query_fallback(query: str) -> SearchFilters:
     ext = _infer_extensions(lowered)
     has_terms = _infer_has_terms(stripped)
     path = _infer_path(stripped)
+    not_path = _infer_not_path(stripped)
     name = _infer_name(stripped)
+    size = _infer_size(stripped)
+    mod = _infer_mod(stripped)
 
     entry_type: str | None = None
     if re.search(r"\b(?:directories|directory|folders|folder)\b", lowered):
         entry_type = "dir"
     elif re.search(r"\b(?:symlink|symlinks|link|links)\b", lowered):
         entry_type = "link"
-    elif ext or has_terms or path or name:
+    elif ext or has_terms or path or not_path or name or size or mod:
         entry_type = "file"
 
     candidate = SearchFilters(
         ext=ext or None,
         has=has_terms or None,
         path=path,
+        not_path=not_path,
         name=name,
+        size=size,
+        mod=mod,
         type=entry_type,
     )
     if not has_meaningful_filters(candidate):
@@ -146,7 +182,23 @@ def _infer_path(query: str) -> str | None:
         return None
     if any(part == ".." for part in candidate.split("/")):
         return None
+    if candidate.lower() in _PATH_STOPWORDS:
+        return None
     if candidate.lower() in {"files", "file", "directories", "directory", "folders", "folder"}:
+        return None
+    return candidate
+
+
+def _infer_not_path(query: str) -> str | None:
+    match = _NOT_PATH_PATTERN.search(query)
+    if match is None:
+        return None
+    candidate = match.group(1).strip().strip(".,;:)")
+    if not candidate:
+        return None
+    if candidate.startswith(("/", "~")):
+        return None
+    if any(part == ".." for part in candidate.split("/")):
         return None
     return candidate
 
@@ -159,6 +211,54 @@ def _infer_name(query: str) -> str | None:
     if not candidate:
         return None
     return candidate
+
+
+def _infer_size(query: str) -> str | None:
+    greater = _SIZE_GREATER_PATTERN.search(query)
+    if greater is not None:
+        return _build_size_constraint(">", greater.group(1), greater.group(2))
+    lower = _SIZE_LESS_PATTERN.search(query)
+    if lower is not None:
+        return _build_size_constraint("<", lower.group(1), lower.group(2))
+    return None
+
+
+def _infer_mod(query: str) -> str | None:
+    lowered = query.lower()
+    explicit = _MOD_LAST_WINDOW_PATTERN.search(lowered)
+    if explicit is not None:
+        count = explicit.group(1)
+        unit = explicit.group(2)
+        if unit.startswith("minute"):
+            return f">{count}m"
+        if unit.startswith("hour"):
+            return f">{count}h"
+        if unit.startswith("day"):
+            return f">{count}d"
+        if unit.startswith("week"):
+            return f">{count}w"
+        if unit.startswith("month"):
+            return f">{int(count) * 30}d"
+
+    if "today" in lowered:
+        return ">1d"
+    if "this week" in lowered:
+        return ">7d"
+    if "this month" in lowered:
+        return ">30d"
+    return None
+
+
+def _build_size_constraint(operator: str, raw_amount: str, raw_unit: str | None) -> str:
+    amount = float(raw_amount)
+    if amount.is_integer():
+        amount_str = str(int(amount))
+    else:
+        amount_str = str(amount).rstrip("0").rstrip(".")
+
+    if raw_unit is None or raw_unit.lower() == "b":
+        return f"{operator}{amount_str}"
+    return f"{operator}{amount_str}{raw_unit.upper()}"
 
 
 def _append_unique(values: list[str], candidate: str) -> None:

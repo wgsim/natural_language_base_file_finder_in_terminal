@@ -1142,6 +1142,33 @@ class TestMainAdditionalBranches:
         assert result == 0
         assert "index: hits=0 fallbacks=1 reasons=stale_index:1" in captured.err
 
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_cache_stats_prints_llm_fallback_reason(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_walk,
+        tmp_path,
+        capsys,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls, extract_side_effect=httpx.ConnectError("offline"))
+        mock_walk.return_value = [file_a]
+
+        result = main(["python files", "--cache-stats", "--root", str(tmp_path), "--no-rerank"])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "llm_fallback: count=1 reasons=http_connecterror:1" in captured.err
+
     @patch("askfind.cli.compute_root_fingerprint", return_value="root-fp")
     @patch("askfind.cli.build_search_cache_key", return_value="cache-key")
     @patch("askfind.cli.walk_and_filter")

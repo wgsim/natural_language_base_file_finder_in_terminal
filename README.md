@@ -16,6 +16,7 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 💾 **Search Cache** - Reuses recent query results (disable per run with `--no-cache`, inspect cache/index runtime counters with `--cache-stats`)
 - 🗂️ **Index Management** - Build/update/status/clear optional per-root file indexes
 - 🧠 **LLM Filter Memoization** - Reuses repeated filter-extraction calls (in-memory + disk cache)
+- 🛟 **LLM Outage Fallback** - If filter extraction fails, askfind falls back to heuristic query parsing for core filters
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
 - 🔐 **Secure Secrets** - Keychain-first API key storage (macOS Keychain, Linux Secret Service, Windows Credential Manager)
 - 📋 **Multiple Output Formats** - Plain, verbose, or JSON output for scripting
@@ -142,7 +143,7 @@ askfind config models
 
 ## How It Works
 
-1. **Natural Language → Filters**: Your query is sent to an LLM which extracts structured search filters (file extensions, paths, size constraints, modification times, content patterns, etc.)
+1. **Natural Language → Filters**: Your query is sent to an LLM which extracts structured search filters (file extensions, paths, size constraints, modification times, content patterns, etc.). If LLM extraction fails or returns empty constraints, askfind applies a heuristic fallback parser for core filters (`ext`, `path`, `not_path`, `has`, `size`, `mod`).
 
 2. **Optimized Search**: Filters are applied in cheapest-first order:
    - Tier 0 (no I/O): type, depth, extension, name patterns
@@ -153,9 +154,9 @@ askfind config models
    Binary files are excluded by default to reduce noisy results. Use `--include-binary` when needed.
    Symlinks are not followed unless `--follow-symlinks` is set.
    Archive entry path/name and `has` content matching are available with `--search-archives`.
-   Search results are cached by default. Use `--no-cache` to bypass cache for one command, or `--cache-stats` to print cache hit/miss/set counters and index hit/fallback reasons.
+   Search results are cached by default. Use `--no-cache` to bypass cache for one command, or `--cache-stats` to print cache hit/miss/set counters, index hit/fallback reasons, and LLM fallback usage stats.
 
-3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance
+3. **Optional Re-ranking**: Results can be semantically re-ranked by the LLM for better relevance (automatically skipped when heuristic fallback is used)
 
 4. **Optional Index Management**: Use `askfind index` commands to precompute and manage
    per-root file path indexes for large repositories. When present and fresh, search

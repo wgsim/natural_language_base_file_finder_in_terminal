@@ -199,6 +199,7 @@ class InteractiveSession:
 
             if cached_paths is None:
                 fallback_used = False
+                fallback_reason: str | None = None
                 try:
                     raw = self.client.extract_filters(query)
                     filters = parse_llm_response(raw)
@@ -207,11 +208,13 @@ class InteractiveSession:
                         if has_meaningful_filters(fallback_filters):
                             filters = fallback_filters
                             fallback_used = True
+                            fallback_reason = "empty_llm_filters"
                 except httpx.HTTPError:
                     fallback_filters = parse_query_fallback(query)
                     if has_meaningful_filters(fallback_filters):
                         filters = fallback_filters
                         fallback_used = True
+                        fallback_reason = "http_error"
                     else:
                         raise
 
@@ -231,6 +234,7 @@ class InteractiveSession:
                 )
                 self.results = [FileResult.from_path(p) for p in paths]
                 if fallback_used:
+                    logger.debug("Interactive fallback parser used (reason=%s)", fallback_reason or "unknown")
                     console.print("[yellow]Warning: LLM unavailable; using heuristic fallback filters.[/yellow]")
 
                 if self.cache is not None and cache_key is not None and root_fingerprint is not None:
