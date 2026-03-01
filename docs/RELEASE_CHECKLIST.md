@@ -24,6 +24,15 @@ Use this checklist before tagging and publishing a release.
   - `docs/benchmark-baseline-YYYY-MM-DD.md`
 - [ ] Commit the new `docs/benchmarks/YYYY-MM-DD/` artifacts + baseline report
 
+## Benchmark Baseline Cadence Policy
+
+- [ ] Weekly refresh: run baseline capture once per week (recommended Monday, UTC)
+- [ ] Mandatory refresh before each release tag (`v*`)
+- [ ] Additional refresh after major performance-impacting changes:
+  - walker traversal algorithm changes
+  - index query path changes
+  - cache key/cache policy changes
+
 ## Release Workflow
 
 - [ ] Create annotated tag: `git tag -a vX.Y.Z -m "vX.Y.Z"`
