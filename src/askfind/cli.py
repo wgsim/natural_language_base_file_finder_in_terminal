@@ -249,6 +249,17 @@ class _IndexQueryRuntimeStats:
         self.fallback_reasons[normalized_reason] = self.fallback_reasons.get(normalized_reason, 0) + 1
 
 
+@dataclass
+class _LLMFallbackRuntimeStats:
+    count: int = 0
+    reasons: dict[str, int] = field(default_factory=dict)
+
+    def record(self, reason: str | None) -> None:
+        self.count += 1
+        normalized_reason = reason or "unknown"
+        self.reasons[normalized_reason] = self.reasons.get(normalized_reason, 0) + 1
+
+
 def _emit_index_stats(index_stats: _IndexQueryRuntimeStats) -> None:
     if not index_stats.fallback_reasons:
         reasons_text = "none"
@@ -261,6 +272,20 @@ def _emit_index_stats(index_stats: _IndexQueryRuntimeStats) -> None:
         f"index: hits={index_stats.hits} "
         f"fallbacks={index_stats.fallbacks} "
         f"reasons={reasons_text}",
+        file=sys.stderr,
+    )
+
+
+def _emit_llm_fallback_stats(stats: _LLMFallbackRuntimeStats) -> None:
+    if not stats.reasons:
+        reasons_text = "none"
+    else:
+        reasons_text = ",".join(
+            f"{reason}:{count}"
+            for reason, count in sorted(stats.reasons.items())
+        )
+    print(
+        f"llm_fallback: count={stats.count} reasons={reasons_text}",
         file=sys.stderr,
     )
 
@@ -605,6 +630,7 @@ def main(argv: list[str] | None = None) -> int:
 
     cache = SearchCache(ttl_seconds=cache_ttl_seconds) if cache_enabled else None
     index_stats = _IndexQueryRuntimeStats()
+    llm_fallback_stats = _LLMFallbackRuntimeStats()
     cache_key: str | None = None
     root_fingerprint: str | None = None
     if cache is not None:
@@ -650,6 +676,7 @@ def main(argv: list[str] | None = None) -> int:
         if cached_paths is None:
             logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
             fallback_used = False
+            fallback_reason: str | None = None
             with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
                 try:
                     logger.debug(f"Sending query to LLM: {args.query}")
@@ -665,11 +692,21 @@ def main(argv: list[str] | None = None) -> int:
                         if has_meaningful_filters(fallback_filters):
                             filters = fallback_filters
                             fallback_used = True
-                except (httpx.HTTPError, json_module.JSONDecodeError):
+                            fallback_reason = "empty_llm_filters"
+                except httpx.HTTPError as exc:
                     fallback_filters = parse_query_fallback(args.query)
                     if has_meaningful_filters(fallback_filters):
                         filters = fallback_filters
                         fallback_used = True
+                        fallback_reason = f"http_{exc.__class__.__name__.lower()}"
+                    else:
+                        raise
+                except json_module.JSONDecodeError:
+                    fallback_filters = parse_query_fallback(args.query)
+                    if has_meaningful_filters(fallback_filters):
+                        filters = fallback_filters
+                        fallback_used = True
+                        fallback_reason = "invalid_llm_json"
                     else:
                         raise
 
@@ -726,6 +763,7 @@ def main(argv: list[str] | None = None) -> int:
                 except OSError:
                     logger.debug("Cache write failed; continuing without cache", exc_info=True)
             if fallback_used:
+                llm_fallback_stats.record(fallback_reason)
                 print(
                     "Warning: LLM unavailable; using heuristic fallback filters.",
                     file=sys.stderr,
@@ -735,6 +773,7 @@ def main(argv: list[str] | None = None) -> int:
             if args.cache_stats:
                 _emit_cache_stats(cache)
                 _emit_index_stats(index_stats)
+                _emit_llm_fallback_stats(llm_fallback_stats)
             return 1
 
         if args.json_output:
@@ -746,6 +785,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.cache_stats:
             _emit_cache_stats(cache)
             _emit_index_stats(index_stats)
+            _emit_llm_fallback_stats(llm_fallback_stats)
         return 0
     except KeyboardInterrupt:
         print("\nSearch cancelled.", file=sys.stderr)

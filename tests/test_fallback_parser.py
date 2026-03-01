@@ -24,3 +24,12 @@ def test_parse_query_fallback_respects_quoted_content_terms():
 
     assert filters.ext == [".md"]
     assert filters.has == ["release checklist"]
+
+
+def test_parse_query_fallback_infers_size_mod_and_not_path():
+    filters = parse_query_fallback("python files larger than 10MB in last 7 days excluding tests")
+
+    assert filters.ext == [".py"]
+    assert filters.size == ">10MB"
+    assert filters.mod == ">7d"
+    assert filters.not_path == "tests"
