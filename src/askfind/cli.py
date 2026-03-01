@@ -14,6 +14,7 @@ from dataclasses import dataclass, field, fields
 
 from askfind.config import Config, get_api_key, get_config_path, set_api_key
 from askfind.llm.client import LLMClient
+from askfind.llm.fallback import has_meaningful_filters, parse_query_fallback
 from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import setup_logging, get_logger
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
@@ -648,15 +649,30 @@ def main(argv: list[str] | None = None) -> int:
 
         if cached_paths is None:
             logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
+            fallback_used = False
             with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
-                logger.debug(f"Sending query to LLM: {args.query}")
-                raw_response = client.extract_filters(args.query)
-                logger.debug(
-                    f"Received LLM response: {raw_response[:200]}..."
-                    if len(raw_response) > 200
-                    else f"Received LLM response: {raw_response}"
-                )
-                filters = parse_llm_response(raw_response)
+                try:
+                    logger.debug(f"Sending query to LLM: {args.query}")
+                    raw_response = client.extract_filters(args.query)
+                    logger.debug(
+                        f"Received LLM response: {raw_response[:200]}..."
+                        if len(raw_response) > 200
+                        else f"Received LLM response: {raw_response}"
+                    )
+                    filters = parse_llm_response(raw_response)
+                    if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
+                        fallback_filters = parse_query_fallback(args.query)
+                        if has_meaningful_filters(fallback_filters):
+                            filters = fallback_filters
+                            fallback_used = True
+                except (httpx.HTTPError, json_module.JSONDecodeError):
+                    fallback_filters = parse_query_fallback(args.query)
+                    if has_meaningful_filters(fallback_filters):
+                        filters = fallback_filters
+                        fallback_used = True
+                    else:
+                        raise
+
                 if isinstance(filters, SearchFilters):
                     filters.similarity_threshold = similarity_threshold
                 index_options = IndexOptions(
@@ -696,7 +712,7 @@ def main(argv: list[str] | None = None) -> int:
                 results = [FileResult.from_path(p) for p in paths]
 
                 # Optional LLM re-ranking for semantic relevance
-                if not args.no_rerank and len(results) > 1:
+                if not args.no_rerank and not fallback_used and len(results) > 1:
                     from askfind.search.reranker import rerank_results
                     results = rerank_results(client, args.query, results)
 
@@ -709,6 +725,11 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 except OSError:
                     logger.debug("Cache write failed; continuing without cache", exc_info=True)
+            if fallback_used:
+                print(
+                    "Warning: LLM unavailable; using heuristic fallback filters.",
+                    file=sys.stderr,
+                )
 
         if not results:
             if args.cache_stats:
