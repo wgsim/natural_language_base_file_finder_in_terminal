@@ -2,6 +2,31 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.18] - 2026-03-02
+
+### Added
+- Added interactive offline-mode parity:
+  - `askfind -i --offline` now skips API key/LLM client initialization in interactive session mode.
+- Added dedicated CI `offline-smoke` job:
+  - validates expected offline match behavior on a temporary sample tree.
+  - asserts broad offline queries fail with an explicit `too broad` guard message.
+- Added stronger regression tests for:
+  - index-query gate parity/mismatch diagnostics
+  - benchmark-regression gate threshold/invalid-median handling
+  - fallback parser false-positive prevention cases
+
+### Changed
+- Improved offline fallback parser precision:
+  - plain verb usage of `go` no longer implies Go-language extension matching.
+  - generic scope words (`project`, `repo`, `repository`, `codebase`, `workspace`) are no longer inferred as concrete path filters.
+- Improved index-query regression gate output:
+  - scenario lines now include explicit parity state (`parity=match|mismatch`).
+  - mismatch/ratio failure messages now include delta, direction, and over-threshold diagnostics.
+- Hardened benchmark-regression gate validation:
+  - rejects non-finite `--ratio-threshold` values.
+  - fails safely on non-finite or negative median measurements with explicit diagnostics.
+- Updated package version metadata to `0.1.18`.
+
 ## [0.1.17] - 2026-03-02
 
 ### Added
