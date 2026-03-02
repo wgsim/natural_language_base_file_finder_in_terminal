@@ -2,6 +2,27 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.17] - 2026-03-02
+
+### Added
+- Added explicit offline search mode via CLI flag:
+  - `--offline` skips API key validation and LLM calls.
+  - search runs with local heuristic filter parsing only.
+- Added offline end-to-end CLI coverage:
+  - offline successful search path without LLM mocks
+  - offline broad-query rejection guard path
+  - offline `--cache-stats` output path
+
+### Changed
+- Improved fallback parser precision for natural language queries:
+  - reduced path false positives for size/time phrases
+  - improved `path` / `not_path` normalization and determiner handling
+  - preserved quoted `has` terms that include words like `in`
+- Extended fallback parser support for:
+  - `size` constraints (`larger than`, `under`, etc.)
+  - relative `mod` windows (`last 7 days`, `past 3 hours`, etc.)
+- Updated package version metadata to `0.1.17`.
+
 ## [0.1.16] - 2026-02-28
 
 ### Added

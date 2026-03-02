@@ -1548,6 +1548,86 @@ class TestMainAdditionalBranches:
         mock_walk.assert_not_called()
 
 
+class TestOfflineEndToEnd:
+    def test_offline_mode_searches_without_llm_mocks(self, tmp_path, monkeypatch, capsys):
+        root = tmp_path / "repo"
+        src = root / "src"
+        src.mkdir(parents=True)
+        matched = src / "keep.py"
+        matched.write_text("# TODO: keep me\n")
+        non_match_py = src / "skip.py"
+        non_match_py.write_text("print('no marker')\n")
+        non_match_ext = src / "note.txt"
+        non_match_ext.write_text("TODO but not python\n")
+
+        monkeypatch.setattr("askfind.cli.get_config_path", lambda: tmp_path / "missing-config.toml")
+
+        result = main(
+            [
+                "python files in src containing TODO",
+                "--offline",
+                "--root",
+                str(root),
+                "--no-cache",
+                "--no-rerank",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(matched) in captured.out
+        assert str(non_match_py) not in captured.out
+        assert str(non_match_ext) not in captured.out
+
+    def test_offline_mode_rejects_broad_query_end_to_end(self, tmp_path, monkeypatch, capsys):
+        root = tmp_path / "repo"
+        root.mkdir()
+        (root / "a.py").write_text("print('x')\n")
+
+        monkeypatch.setattr("askfind.cli.get_config_path", lambda: tmp_path / "missing-config.toml")
+
+        result = main(
+            [
+                "find files",
+                "--offline",
+                "--root",
+                str(root),
+                "--no-cache",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "too broad" in captured.err.lower()
+        assert captured.out.strip() == ""
+
+    def test_offline_mode_cache_stats_end_to_end(self, tmp_path, monkeypatch, capsys):
+        root = tmp_path / "repo"
+        src = root / "src"
+        src.mkdir(parents=True)
+        (src / "one.py").write_text("print('ok')\n")
+
+        monkeypatch.setattr("askfind.cli.get_config_path", lambda: tmp_path / "missing-config.toml")
+
+        result = main(
+            [
+                "python files in src",
+                "--offline",
+                "--cache-stats",
+                "--root",
+                str(root),
+                "--no-cache",
+                "--no-rerank",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "cache: disabled" in captured.err
+        assert "index: " in captured.err
+        assert "llm_fallback: count=0 reasons=none" in captured.err
+
+
 class TestIndexSubcommand:
     @patch("askfind.cli.build_index")
     @patch("askfind.cli.Config.from_file")
