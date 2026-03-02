@@ -35,6 +35,7 @@ class Config:
     search_archives: bool = False
     similarity_threshold: float = 0.55
     editor: str = "vim"
+    offline_mode: bool = False
 
     @classmethod
     def from_file(cls, path: Path) -> Config:
@@ -60,6 +61,7 @@ class Config:
             "search_archives": search,
             "similarity_threshold": search,
             "editor": interactive,
+            "offline_mode": interactive,
         }
         for field in fields(cls):
             source = field_map.get(field.name)
@@ -72,6 +74,7 @@ class Config:
             "follow_symlinks",
             "exclude_binary_files",
             "search_archives",
+            "offline_mode",
         ):
             if bool_key in kwargs and not isinstance(kwargs[bool_key], bool):
                 kwargs.pop(bool_key)
@@ -117,6 +120,7 @@ class Config:
             },
             "interactive": {
                 "editor": self.editor,
+                "offline_mode": self.offline_mode,
             },
         }
 

@@ -399,6 +399,7 @@ def _handle_config(args: argparse.Namespace) -> int:
         table.add_row("search_archives", str(config.search_archives))
         table.add_row("similarity_threshold", str(config.similarity_threshold))
         table.add_row("editor", config.editor)
+        table.add_row("offline_mode", str(config.offline_mode))
         api_key = get_api_key()
         table.add_row("api_key", "****" + api_key[-4:] if api_key else "[not set]")
         console.print(table)
@@ -451,6 +452,7 @@ def _handle_config(args: argparse.Namespace) -> int:
             "follow_symlinks",
             "exclude_binary_files",
             "search_archives",
+            "offline_mode",
         }:
             try:
                 value = _parse_bool(value)
