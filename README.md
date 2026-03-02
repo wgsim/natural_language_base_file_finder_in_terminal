@@ -17,6 +17,7 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 🗂️ **Index Management** - Build/update/status/clear optional per-root file indexes
 - 🧠 **LLM Filter Memoization** - Reuses repeated filter-extraction calls (in-memory + disk cache)
 - 🛟 **LLM Outage Fallback** - If filter extraction fails, askfind falls back to heuristic query parsing for core filters
+- 🔌 **Explicit Offline Mode** - `--offline` skips API key/LLM and uses local heuristic parsing directly
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
 - 🔐 **Secure Secrets** - Keychain-first API key storage (macOS Keychain, Linux Secret Service, Windows Credential Manager)
 - 📋 **Multiple Output Formats** - Plain, verbose, or JSON output for scripting
@@ -26,7 +27,8 @@ Find files using plain English queries instead of complex shell commands. askfin
 ### Prerequisites
 
 - Python 3.12 or higher
-- An OpenAI-compatible API key (OpenRouter, OpenAI, local LLM via Ollama, etc.)
+- An OpenAI-compatible API key for online mode (OpenRouter, OpenAI, local LLM via Ollama, etc.)
+  - API key is not required when using `--offline`
 
 ### Install from Source
 
@@ -74,6 +76,9 @@ askfind "python files" --no-rerank
 
 # Disable cache for one command
 askfind "python files" --no-cache
+
+# Force local-only parsing (no API key / no LLM call)
+askfind "python files in src" --offline
 
 # Print cache/index counters for the command
 askfind "python files" --cache-stats
@@ -143,7 +148,10 @@ askfind config models
 
 ## How It Works
 
-1. **Natural Language → Filters**: Your query is sent to an LLM which extracts structured search filters (file extensions, paths, size constraints, modification times, content patterns, etc.). If LLM extraction fails or returns empty constraints, askfind applies a heuristic fallback parser for core filters (`ext`, `path`, `not_path`, `has`, `size`, `mod`).
+1. **Natural Language → Filters**:
+   - Default mode sends your query to an LLM which extracts structured search filters (file extensions, paths, size constraints, modification times, content patterns, etc.).
+   - `--offline` skips the LLM and directly applies heuristic query parsing for core filters (`ext`, `path`, `not_path`, `has`, `size`, `mod`).
+   - If fallback parsing yields no meaningful filters in `--offline` mode, askfind exits with a non-zero status and a concise guidance message instead of running a broad search.
 
 2. **Optimized Search**: Filters are applied in cheapest-first order:
    - Tier 0 (no I/O): type, depth, extension, name patterns

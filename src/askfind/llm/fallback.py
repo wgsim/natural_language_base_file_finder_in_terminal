@@ -33,11 +33,19 @@ _MEANINGFUL_FILTER_FIELDS = (
 )
 _EXTENSION_PATTERN = re.compile(r"(?<!\w)\.([a-z0-9]{1,12})\b")
 _HAS_CLAUSE_PATTERN = re.compile(r"\b(?:contain|contains|containing|with|has)\b(?P<tail>.+)", re.IGNORECASE)
-_PATH_PATTERN = re.compile(r"\b(?:in|under|inside)\s+([A-Za-z0-9_./-]+)", re.IGNORECASE)
-_NOT_PATH_PATTERN = re.compile(r"\b(?:excluding|exclude|without|except|not in)\s+([A-Za-z0-9_./-]+)", re.IGNORECASE)
+_PATH_PATTERN = re.compile(
+    r"\b(?:in|under|inside)\s+(?:(?:the|a|an|this|that|these|those|my|your|our)\s+)?([A-Za-z0-9_./-]+)",
+    re.IGNORECASE,
+)
+_NOT_PATH_PATTERN = re.compile(
+    r"\b(?:excluding|exclude|without|except|not in)\s+"
+    r"(?:(?:the|a|an|this|that|these|those|my|your|our)\s+)?([A-Za-z0-9_./-]+)",
+    re.IGNORECASE,
+)
 _NAME_PATTERN = re.compile(r"\bnamed\s+([A-Za-z0-9*._-]+)", re.IGNORECASE)
 _QUOTED_TERM_PATTERN = re.compile(r'"([^"]+)"|\'([^\']+)\'')
 _HAS_MARKERS = ("todo", "fixme", "hack", "bug", "xxx", "note")
+_SIZE_LITERAL_PATTERN = re.compile(r"\d+(?:\.\d+)?(?:kb|mb|gb|tb|b)?\Z", re.IGNORECASE)
 _SIZE_GREATER_PATTERN = re.compile(
     r"\b(?:larger than|bigger than|greater than|more than|over|above)\s+"
     r"(\d+(?:\.\d+)?)\s*(kb|mb|gb|tb|b)?\b",
@@ -52,8 +60,17 @@ _MOD_LAST_WINDOW_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _PATH_STOPWORDS = {
+    "a",
+    "an",
+    "all",
+    "any",
     "last",
     "past",
+    "the",
+    "this",
+    "that",
+    "these",
+    "those",
     "today",
     "yesterday",
     "week",
@@ -66,7 +83,11 @@ _PATH_STOPWORDS = {
     "hours",
     "minutes",
     "minute",
+    "my",
+    "our",
+    "your",
 }
+_PATH_ENTITY_WORDS = {"files", "file", "directories", "directory", "folders", "folder"}
 _LANGUAGE_EXTENSION_HINTS = (
     ("python", (".py",)),
     ("javascript", (".js",)),
@@ -152,7 +173,6 @@ def _infer_has_terms(query: str) -> list[str]:
         return []
 
     tail = clause_match.group("tail")
-    tail = re.split(r"\b(?:in|under|inside)\b\s+[A-Za-z0-9_./-]+", tail, maxsplit=1, flags=re.IGNORECASE)[0]
     terms: list[str] = []
 
     for quoted_a, quoted_b in _QUOTED_TERM_PATTERN.findall(tail):
@@ -163,6 +183,7 @@ def _infer_has_terms(query: str) -> list[str]:
     if terms:
         return terms
 
+    tail = re.split(r"\b(?:in|under|inside)\b\s+[A-Za-z0-9_./-]+", tail, maxsplit=1, flags=re.IGNORECASE)[0]
     lowered_tail = tail.lower()
     for marker in _HAS_MARKERS:
         if re.search(rf"\b{re.escape(marker)}\b", lowered_tail):
@@ -171,36 +192,27 @@ def _infer_has_terms(query: str) -> list[str]:
 
 
 def _infer_path(query: str) -> str | None:
-    path_match = _PATH_PATTERN.search(query)
-    if path_match is None:
-        return None
+    query_without_quotes = _QUOTED_TERM_PATTERN.sub(" ", query)
+    lowered = query_without_quotes.lower()
 
-    candidate = path_match.group(1).strip().strip(".,;:)")
-    if candidate in {"", ".", "./"}:
-        return None
-    if candidate.startswith(("/", "~")):
-        return None
-    if any(part == ".." for part in candidate.split("/")):
-        return None
-    if candidate.lower() in _PATH_STOPWORDS:
-        return None
-    if candidate.lower() in {"files", "file", "directories", "directory", "folders", "folder"}:
-        return None
-    return candidate
+    for match in _PATH_PATTERN.finditer(query_without_quotes):
+        # Avoid interpreting "not in <x>" as an inclusion path.
+        prefix = lowered[max(0, match.start() - 5) : match.start()]
+        if re.search(r"\bnot\s*$", prefix):
+            continue
+        candidate = _normalize_path_candidate(match.group(1))
+        if candidate is not None:
+            return candidate
+    return None
 
 
 def _infer_not_path(query: str) -> str | None:
-    match = _NOT_PATH_PATTERN.search(query)
-    if match is None:
-        return None
-    candidate = match.group(1).strip().strip(".,;:)")
-    if not candidate:
-        return None
-    if candidate.startswith(("/", "~")):
-        return None
-    if any(part == ".." for part in candidate.split("/")):
-        return None
-    return candidate
+    query_without_quotes = _QUOTED_TERM_PATTERN.sub(" ", query)
+    for match in _NOT_PATH_PATTERN.finditer(query_without_quotes):
+        candidate = _normalize_path_candidate(match.group(1))
+        if candidate is not None:
+            return candidate
+    return None
 
 
 def _infer_name(query: str) -> str | None:
@@ -259,6 +271,25 @@ def _build_size_constraint(operator: str, raw_amount: str, raw_unit: str | None)
     if raw_unit is None or raw_unit.lower() == "b":
         return f"{operator}{amount_str}"
     return f"{operator}{amount_str}{raw_unit.upper()}"
+
+
+def _normalize_path_candidate(raw_candidate: str) -> str | None:
+    candidate = raw_candidate.strip().strip(".,;:)")
+    if candidate in {"", ".", "./"}:
+        return None
+    if candidate.startswith(("/", "~")):
+        return None
+    if any(part == ".." for part in candidate.split("/")):
+        return None
+
+    lowered = candidate.lower()
+    if lowered in _PATH_STOPWORDS:
+        return None
+    if lowered in _PATH_ENTITY_WORDS:
+        return None
+    if _SIZE_LITERAL_PATTERN.fullmatch(candidate):
+        return None
+    return candidate
 
 
 def _append_unique(values: list[str], candidate: str) -> None:

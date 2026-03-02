@@ -33,3 +33,25 @@ def test_parse_query_fallback_infers_size_mod_and_not_path():
     assert filters.size == ">10MB"
     assert filters.mod == ">7d"
     assert filters.not_path == "tests"
+
+
+def test_parse_query_fallback_avoids_path_false_positive_for_size_and_time_phrases():
+    filters = parse_query_fallback("find files under 10MB in the last 7 days")
+
+    assert filters.path is None
+    assert filters.size == "<10MB"
+    assert filters.mod == ">7d"
+
+
+def test_parse_query_fallback_handles_optional_determiner_in_path_clause():
+    filters = parse_query_fallback("python files in the src containing TODO")
+
+    assert filters.ext == [".py"]
+    assert filters.path == "src"
+    assert filters.has == ["TODO"]
+
+
+def test_parse_query_fallback_preserves_quoted_has_phrase_with_in():
+    filters = parse_query_fallback('files containing "error in auth"')
+
+    assert filters.has == ["error in auth"]
