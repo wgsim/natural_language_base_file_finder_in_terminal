@@ -587,6 +587,7 @@ def main(argv: list[str] | None = None) -> int:
         config.parallel_workers = parallel_workers
         config.cache_enabled = cache_enabled
         config.cache_ttl_seconds = cache_ttl_seconds
+        config.offline_mode = args.offline
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -606,6 +607,7 @@ def main(argv: list[str] | None = None) -> int:
         config.parallel_workers = parallel_workers
         config.cache_enabled = cache_enabled
         config.cache_ttl_seconds = cache_ttl_seconds
+        config.offline_mode = args.offline
         session = InteractiveSession(config, root_path)
         session.run()
         return 0

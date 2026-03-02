@@ -108,6 +108,9 @@ askfind "python files in archives" --search-archives
 # Launch interactive session (spawns in tmux/zellij pane)
 askfind -i
 
+# Launch interactive session in offline mode (no API key / no LLM call)
+askfind -i --offline
+
 # In the REPL:
 askfind> python files in src
 Found 15 file(s):

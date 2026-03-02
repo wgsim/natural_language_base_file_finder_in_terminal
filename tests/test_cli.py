@@ -825,6 +825,23 @@ class TestMainAdditionalBranches:
         mock_session.run.assert_called_once()
 
     @patch("askfind.interactive.session.InteractiveSession")
+    @patch("askfind.cli.Config.from_file")
+    def test_interactive_session_offline_flag_propagates_to_config(
+        self, mock_config_cls, mock_session_cls, tmp_path
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config_cls.return_value = mock_config
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+
+        result = main(["--interactive-session", "--offline", "--root", str(tmp_path)])
+
+        assert result == 0
+        assert getattr(mock_config, "offline_mode") is True
+        mock_session_cls.assert_called_once_with(mock_config, tmp_path.resolve())
+        mock_session.run.assert_called_once()
+
+    @patch("askfind.interactive.session.InteractiveSession")
     @patch("askfind.interactive.pane.spawn_interactive_pane", return_value=True)
     @patch("askfind.cli.Config.from_file")
     def test_interactive_pane_spawned_returns_0(
