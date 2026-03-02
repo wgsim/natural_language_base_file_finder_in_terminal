@@ -20,6 +20,12 @@ Use this checklist before tagging and publishing a release.
   - `scripts/bench/generate_synth_dataset.sh /tmp/askfind_bench_synth`
 - [ ] Re-run S1-S4 benchmark artifact generation (workers 1 and 4) using `docs/BENCHMARK_SCENARIOS.md`
 - [ ] Re-run compare reports using `scripts/bench/compare_benchmark_results.py`
+- [ ] Run CI-style regression gates with release threshold (`1.35x`):
+  - `PYTHONPATH=src python scripts/ci/benchmark_regression_gate.py --root . --ratio-threshold 1.35`
+  - `PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root . --ratio-threshold 1.35`
+- [ ] Confirm gate expectations in output:
+  - pass condition is `ratio <= threshold` (gate fails only when `ratio > threshold`)
+  - default scenarios are `all-files` and `python-files` when both are available (unless `--scenario` overrides)
 - [ ] Update baseline report:
   - `docs/benchmark-baseline-YYYY-MM-DD.md`
 - [ ] Commit the new `docs/benchmarks/YYYY-MM-DD/` artifacts + baseline report

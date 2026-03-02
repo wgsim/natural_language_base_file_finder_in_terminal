@@ -88,6 +88,7 @@ _PATH_STOPWORDS = {
     "your",
 }
 _PATH_ENTITY_WORDS = {"files", "file", "directories", "directory", "folders", "folder"}
+_PATH_GENERIC_SCOPE_WORDS = {"codebase", "project", "repo", "repository", "workspace"}
 _LANGUAGE_EXTENSION_HINTS = (
     ("python", (".py",)),
     ("javascript", (".js",)),
@@ -100,7 +101,7 @@ _LANGUAGE_EXTENSION_HINTS = (
     ("shell", (".sh",)),
     ("bash", (".sh",)),
     ("zsh", (".zsh", ".sh")),
-    ("go", (".go",)),
+    ("golang", (".go",)),
     ("rust", (".rs",)),
     ("java", (".java",)),
     ("html", (".html", ".htm")),
@@ -108,6 +109,7 @@ _LANGUAGE_EXTENSION_HINTS = (
     ("xml", (".xml",)),
     ("sql", (".sql",)),
 )
+_GO_LANGUAGE_PATTERN = re.compile(r"\b(?:golang|go\s+(?:files?|code|source)|(?:files?|code|source)\s+in\s+go)\b")
 
 
 def has_meaningful_filters(filters: SearchFilters) -> bool:
@@ -163,6 +165,9 @@ def _infer_extensions(lowered_query: str) -> list[str]:
         if re.search(rf"\b{re.escape(keyword)}\b", lowered_query):
             for extension in extensions:
                 _append_unique(found, extension)
+
+    if _GO_LANGUAGE_PATTERN.search(lowered_query):
+        _append_unique(found, ".go")
 
     return found
 
@@ -286,6 +291,8 @@ def _normalize_path_candidate(raw_candidate: str) -> str | None:
     if lowered in _PATH_STOPWORDS:
         return None
     if lowered in _PATH_ENTITY_WORDS:
+        return None
+    if lowered in _PATH_GENERIC_SCOPE_WORDS:
         return None
     if _SIZE_LITERAL_PATTERN.fullmatch(candidate):
         return None

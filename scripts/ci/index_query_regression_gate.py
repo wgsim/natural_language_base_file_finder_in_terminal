@@ -97,6 +97,47 @@ def _select_scenarios(*, requested: list[str] | None, available: Sequence[str]) 
     return sorted(available)
 
 
+def _format_pct_change(*, baseline: int, candidate: int) -> str:
+    if baseline <= 0:
+        return "n/a"
+    return f"{(abs(candidate - baseline) / baseline) * 100:.3f}%"
+
+
+def _format_result_parity(*, walk_count: int, index_count: int) -> str:
+    if walk_count == index_count:
+        return "parity=match"
+
+    delta = index_count - walk_count
+    direction = "index>walk" if delta > 0 else "walk>index"
+    pct_change = _format_pct_change(baseline=walk_count, candidate=index_count)
+    return f"parity=mismatch delta={delta:+d} ({direction}, pct_change={pct_change})"
+
+
+def _format_result_mismatch(*, scenario_name: str, walk_count: int, index_count: int) -> str:
+    delta = index_count - walk_count
+    direction = "index>walk" if delta > 0 else "walk>index"
+    pct_change = _format_pct_change(baseline=walk_count, candidate=index_count)
+    return (
+        f"{scenario_name} result mismatch: walk={walk_count} index={index_count} "
+        f"delta={delta:+d} ({direction}, pct_change={pct_change})"
+    )
+
+
+def _format_ratio_regression(
+    *,
+    scenario_name: str,
+    ratio: float,
+    ratio_threshold: float,
+    index_median: float,
+    walk_median: float,
+) -> str:
+    return (
+        f"{scenario_name} ratio={ratio:.3f}x "
+        f"(threshold={ratio_threshold:.3f}x over_by={ratio - ratio_threshold:.3f}x "
+        f"index={index_median:.6f}s walk={walk_median:.6f}s)"
+    )
+
+
 def _run_walk_median(
     *,
     benchmark_module: ModuleType,
@@ -209,19 +250,31 @@ def main() -> int:
             continue
 
         ratio = float("inf") if walk_median <= 0 else index_median / walk_median
+        parity = _format_result_parity(walk_count=walk_count, index_count=index_count)
 
         print(
             f"- {scenario_name}: walk_median={walk_median:.6f}s "
             f"index_median={index_median:.6f}s ratio={ratio:.3f}x "
-            f"results={walk_count}/{index_count}"
+            f"results={walk_count}/{index_count} {parity}"
         )
 
         if walk_count != index_count:
-            regressions.append(f"{scenario_name} result mismatch: walk={walk_count} index={index_count}")
+            regressions.append(
+                _format_result_mismatch(
+                    scenario_name=scenario_name,
+                    walk_count=walk_count,
+                    index_count=index_count,
+                )
+            )
         if ratio > args.ratio_threshold:
             regressions.append(
-                f"{scenario_name} ratio={ratio:.3f}x "
-                f"(index={index_median:.6f}s walk={walk_median:.6f}s)"
+                _format_ratio_regression(
+                    scenario_name=scenario_name,
+                    ratio=ratio,
+                    ratio_threshold=args.ratio_threshold,
+                    index_median=index_median,
+                    walk_median=walk_median,
+                )
             )
 
     if regressions:

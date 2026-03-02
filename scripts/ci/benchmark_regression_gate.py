@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import importlib.util
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -69,6 +70,8 @@ def _parse_args(*, scenario_choices: Sequence[str], argv: Sequence[str] | None =
         parser.error("--repeats must be >= 1")
     if args.max_results < 0:
         parser.error("--max-results must be >= 0")
+    if not math.isfinite(args.ratio_threshold):
+        parser.error("--ratio-threshold must be finite")
     if args.ratio_threshold < 1.0:
         parser.error("--ratio-threshold must be >= 1.0")
     return args
@@ -112,6 +115,14 @@ def _run_worker_median(
     return statistics.median(durations), result_count
 
 
+def _format_duration(value: float) -> str:
+    return f"{value:.6f}s" if math.isfinite(value) else str(value)
+
+
+def _format_ratio(value: float) -> str:
+    return f"{value:.3f}x" if math.isfinite(value) else f"{value}x"
+
+
 def main() -> int:
     benchmark_module = _load_benchmark_module()
     scenario_choices = list(benchmark_module.SCENARIOS.keys())
@@ -150,20 +161,38 @@ def main() -> int:
             traversal_workers=PARALLEL_WORKERS,
         )
 
+        if (
+            not math.isfinite(baseline_median)
+            or not math.isfinite(parallel_median)
+            or baseline_median < 0
+            or parallel_median < 0
+        ):
+            print(
+                f"- {scenario_name}: baseline_median={_format_duration(baseline_median)} "
+                f"parallel_median={_format_duration(parallel_median)} "
+                f"ratio=n/a results={baseline_count}/{parallel_count}"
+            )
+            regressions.append(
+                f"{scenario_name} invalid median values: "
+                f"baseline={baseline_median!r} parallel={parallel_median!r}"
+            )
+            continue
+
         if baseline_median <= 0:
             ratio = float("inf")
         else:
             ratio = parallel_median / baseline_median
 
         print(
-            f"- {scenario_name}: baseline_median={baseline_median:.6f}s "
-            f"parallel_median={parallel_median:.6f}s ratio={ratio:.3f}x "
+            f"- {scenario_name}: baseline_median={_format_duration(baseline_median)} "
+            f"parallel_median={_format_duration(parallel_median)} ratio={_format_ratio(ratio)} "
             f"results={baseline_count}/{parallel_count}"
         )
         if ratio > args.ratio_threshold:
             regressions.append(
-                f"{scenario_name} ratio={ratio:.3f}x "
-                f"(parallel={parallel_median:.6f}s baseline={baseline_median:.6f}s)"
+                f"{scenario_name} ratio={_format_ratio(ratio)} "
+                f"(parallel={_format_duration(parallel_median)} "
+                f"baseline={_format_duration(baseline_median)})"
             )
 
     if regressions:

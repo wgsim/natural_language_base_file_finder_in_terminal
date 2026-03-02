@@ -56,6 +56,7 @@ def test_main_returns_success_when_index_query_within_threshold(monkeypatch, cap
     assert GATE.main() == 0
     captured = capsys.readouterr()
     assert "index query regression gate summary:" in captured.out
+    assert "parity=match" in captured.out
     assert "index query regression gate passed" in captured.out
     assert captured.err == ""
 
@@ -87,6 +88,8 @@ def test_main_returns_failure_when_index_query_exceeds_threshold(monkeypatch, ca
     assert GATE.main() == 1
     captured = capsys.readouterr()
     assert "index query regression gate failed" in captured.err
+    assert "threshold=1.200x" in captured.err
+    assert "over_by=0.200x" in captured.err
 
 
 def test_main_returns_failure_when_result_counts_mismatch(monkeypatch, capsys):
@@ -116,6 +119,8 @@ def test_main_returns_failure_when_result_counts_mismatch(monkeypatch, capsys):
     assert GATE.main() == 1
     captured = capsys.readouterr()
     assert "result mismatch" in captured.err
+    assert "delta=-1" in captured.err
+    assert "walk>index" in captured.err
 
 
 def test_main_returns_failure_when_index_build_fails(monkeypatch, capsys):
@@ -231,3 +236,27 @@ def test_select_scenarios_prefers_default_pairs_when_available():
         available=["todo-content", "python-files", "all-files"],
     )
     assert selected == ["all-files", "python-files"]
+
+
+def test_format_result_mismatch_includes_delta_direction_and_percent():
+    message = GATE._format_result_mismatch(
+        scenario_name="all-files",
+        walk_count=25,
+        index_count=24,
+    )
+    assert message.startswith("all-files result mismatch: walk=25 index=24")
+    assert "delta=-1" in message
+    assert "walk>index" in message
+    assert "pct_change=4.000%" in message
+
+
+def test_format_result_mismatch_handles_zero_walk_count():
+    message = GATE._format_result_mismatch(
+        scenario_name="all-files",
+        walk_count=0,
+        index_count=3,
+    )
+    assert message.startswith("all-files result mismatch: walk=0 index=3")
+    assert "delta=+3" in message
+    assert "index>walk" in message
+    assert "pct_change=n/a" in message
