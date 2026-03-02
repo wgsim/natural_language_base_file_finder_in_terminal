@@ -42,17 +42,20 @@ class InteractiveSession:
         self.config = config
         self.root = root.resolve()
         self.results: list[FileResult] = []
+        self.offline_mode = bool(getattr(config, "offline_mode", False))
+        self.client: LLMClient | None = None
 
-        api_key = get_api_key()
-        if not api_key:
-            console.print("[red]No API key configured. Run `askfind config set-key`.[/red]")
-            raise SystemExit(2)
+        if not self.offline_mode:
+            api_key = get_api_key()
+            if not api_key:
+                console.print("[red]No API key configured. Run `askfind config set-key`.[/red]")
+                raise SystemExit(2)
 
-        self.client = LLMClient(
-            base_url=config.base_url,
-            api_key=api_key,
-            model=config.model,
-        )
+            self.client = LLMClient(
+                base_url=config.base_url,
+                api_key=api_key,
+                model=config.model,
+            )
 
         cache_enabled = getattr(config, "cache_enabled", True)
         cache_ttl_seconds = getattr(config, "cache_ttl_seconds", 300)
@@ -89,7 +92,8 @@ class InteractiveSession:
                 # Natural language query
                 self._search(user_input)
         finally:
-            self.client.close()
+            if self.client is not None:
+                self.client.close()
 
     def _handle_action(self, text: str) -> bool:
         """Handle action commands. Returns True if handled."""
@@ -156,6 +160,9 @@ class InteractiveSession:
             base_url = getattr(self.config, "base_url", "")
             if not isinstance(base_url, str):
                 base_url = ""
+            offline_mode = bool(getattr(self, "offline_mode", False))
+            cache_model = "__offline_fallback__" if offline_mode else model
+            cache_base_url = "offline://fallback" if offline_mode else base_url
 
             cached_paths: list[Path] | None = None
             cache_key: str | None = None
@@ -164,8 +171,8 @@ class InteractiveSession:
                 cache_key = build_search_cache_key(
                     query=query,
                     root=self.root,
-                    model=model,
-                    base_url=base_url,
+                    model=cache_model,
+                    base_url=cache_base_url,
                     max_results=max_results,
                     no_rerank=True,
                     respect_ignore_files=respect_ignore_files,
@@ -200,23 +207,34 @@ class InteractiveSession:
             if cached_paths is None:
                 fallback_used = False
                 fallback_reason: str | None = None
-                try:
-                    raw = self.client.extract_filters(query)
-                    filters = parse_llm_response(raw)
-                    if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
+                if offline_mode:
+                    filters = parse_query_fallback(query)
+                    if not has_meaningful_filters(filters):
+                        console.print("[red]Error: --offline query is too broad; add at least one concrete filter.[/red]")
+                        self.results = []
+                        return
+                else:
+                    if self.client is None:
+                        raise RuntimeError("Interactive client not initialized")
+                    try:
+                        raw = self.client.extract_filters(query)
+                        filters = parse_llm_response(raw)
+                        if not isinstance(filters, SearchFilters):
+                            filters = SearchFilters()
+                        if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
+                            fallback_filters = parse_query_fallback(query)
+                            if has_meaningful_filters(fallback_filters):
+                                filters = fallback_filters
+                                fallback_used = True
+                                fallback_reason = "empty_llm_filters"
+                    except httpx.HTTPError:
                         fallback_filters = parse_query_fallback(query)
                         if has_meaningful_filters(fallback_filters):
                             filters = fallback_filters
                             fallback_used = True
-                            fallback_reason = "empty_llm_filters"
-                except httpx.HTTPError:
-                    fallback_filters = parse_query_fallback(query)
-                    if has_meaningful_filters(fallback_filters):
-                        filters = fallback_filters
-                        fallback_used = True
-                        fallback_reason = "http_error"
-                    else:
-                        raise
+                            fallback_reason = "http_error"
+                        else:
+                            raise
 
                 if hasattr(filters, "similarity_threshold"):
                     filters.similarity_threshold = similarity_threshold

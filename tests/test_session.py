@@ -127,6 +127,29 @@ class TestInteractiveSessionInit:
         mock_cache_cls.assert_not_called()
         assert session.cache is None
 
+    @patch("askfind.interactive.session.SearchCache")
+    @patch("askfind.interactive.session.LLMClient")
+    @patch("askfind.interactive.session.get_api_key", return_value=None)
+    def test_init_offline_mode_skips_api_key_and_llm(
+        self, mock_get_key, mock_client_cls, mock_cache_cls, tmp_path
+    ):
+        config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="x",
+            max_results=50,
+            editor="vim",
+            cache_enabled=True,
+            cache_ttl_seconds=123,
+            offline_mode=True,
+        )
+
+        session = InteractiveSession(config, tmp_path)
+
+        mock_get_key.assert_not_called()
+        mock_client_cls.assert_not_called()
+        mock_cache_cls.assert_called_once_with(ttl_seconds=123)
+        assert session.client is None
+
 
 class TestInteractiveSessionActions:
     @patch("askfind.interactive.session.copy_path")
@@ -300,6 +323,17 @@ class TestInteractiveSessionRun:
         mock_handle_action.assert_not_called()
         mock_search.assert_not_called()
         session.client.close.assert_called_once()
+
+    @patch("askfind.interactive.session.console.print")
+    def test_run_offline_mode_without_client_does_not_fail(self, _mock_print, tmp_path):
+        session = _make_session_for_run(tmp_path)
+        session.client = None
+        session.offline_mode = True
+        prompt = MagicMock()
+        prompt.prompt.side_effect = ["exit"]
+
+        with patch("askfind.interactive.session.PromptSession", return_value=prompt):
+            session.run()
 
 
 class TestInteractiveSessionSearch:
@@ -701,3 +735,96 @@ class TestInteractiveSessionSearch:
         inferred_filters = mock_walk.call_args.args[1]
         assert inferred_filters.ext == [".py"]
         mock_print.assert_any_call("[yellow]Warning: LLM unavailable; using heuristic fallback filters.[/yellow]")
+
+    @patch("askfind.interactive.session.walk_and_filter")
+    @patch("askfind.interactive.session.parse_query_fallback")
+    def test_search_offline_mode_uses_fallback_parser_directly(self, mock_fallback, mock_walk, tmp_path):
+        file_path = tmp_path / "fallback.py"
+        file_path.write_text("print('fallback')\n")
+
+        session = InteractiveSession.__new__(InteractiveSession)
+        session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
+            editor="vim",
+            max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+            parallel_workers=4,
+            offline_mode=True,
+        )
+        session.offline_mode = True
+        session.root = tmp_path.resolve()
+        session.results = []
+        session.cache = None
+        session.client = None
+        mock_fallback.return_value = SimpleNamespace(
+            similarity_threshold=None,
+            ext=[".py"],
+            not_ext=None,
+            name=None,
+            not_name=None,
+            path=None,
+            not_path=None,
+            regex=None,
+            fuzzy=None,
+            mod=None,
+            mod_after=None,
+            mod_before=None,
+            size=None,
+            has=None,
+            similar=None,
+            loc=None,
+            complexity=None,
+            lang=None,
+            not_lang=None,
+            license=None,
+            not_license=None,
+            tag=None,
+            type="file",
+            depth=None,
+            perm=None,
+        )
+        mock_walk.return_value = [file_path]
+
+        session._search("python files")
+
+        assert len(session.results) == 1
+        mock_fallback.assert_called_once_with("python files")
+        mock_walk.assert_called_once()
+
+    @patch("askfind.interactive.session.console.print")
+    @patch("askfind.interactive.session.walk_and_filter")
+    @patch("askfind.interactive.session.parse_query_fallback")
+    @patch("askfind.interactive.session.has_meaningful_filters", return_value=False)
+    def test_search_offline_mode_rejects_broad_query(
+        self, _mock_meaningful, mock_fallback, mock_walk, mock_print, tmp_path
+    ):
+        session = InteractiveSession.__new__(InteractiveSession)
+        session.config = SimpleNamespace(
+            base_url="https://api.example.com",
+            model="test-model",
+            editor="vim",
+            max_results=50,
+            cache_enabled=True,
+            cache_ttl_seconds=300,
+            respect_ignore_files=True,
+            follow_symlinks=False,
+            exclude_binary_files=True,
+            parallel_workers=4,
+            offline_mode=True,
+        )
+        session.offline_mode = True
+        session.root = tmp_path.resolve()
+        session.results = []
+        session.cache = None
+        session.client = None
+        mock_fallback.return_value = SimpleNamespace()
+
+        session._search("find files")
+
+        mock_walk.assert_not_called()
+        mock_print.assert_any_call("[red]Error: --offline query is too broad; add at least one concrete filter.[/red]")

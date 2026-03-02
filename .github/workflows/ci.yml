@@ -78,6 +78,51 @@ jobs:
       - name: Index query regression gate
         run: PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root .
 
+  offline-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -e .
+
+      - name: Offline smoke checks
+        run: |
+          set -euo pipefail
+          ROOT="$(mktemp -d)"
+          mkdir -p "$ROOT/src"
+          printf '# TODO: keep\n' > "$ROOT/src/keep.py"
+          printf 'print(\"skip\")\n' > "$ROOT/src/skip.py"
+          printf 'TODO but not python\n' > "$ROOT/src/note.txt"
+
+          out="$(askfind 'python files in src containing TODO' --offline --root "$ROOT" --no-cache --no-rerank)"
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q "keep.py"
+          if printf '%s\n' "$out" | grep -q "skip.py"; then
+            echo "offline smoke failed: unexpected skip.py match" >&2
+            exit 1
+          fi
+          if printf '%s\n' "$out" | grep -q "note.txt"; then
+            echo "offline smoke failed: unexpected note.txt match" >&2
+            exit 1
+          fi
+
+          if askfind "find files" --offline --root "$ROOT" --no-cache > /tmp/offline-broad.out 2> /tmp/offline-broad.err; then
+            echo "offline smoke failed: broad query unexpectedly succeeded" >&2
+            exit 1
+          fi
+          grep -qi "too broad" /tmp/offline-broad.err
+
   benchmark-compare:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_benchmark_compare == 'true' }}
     runs-on: ubuntu-latest
