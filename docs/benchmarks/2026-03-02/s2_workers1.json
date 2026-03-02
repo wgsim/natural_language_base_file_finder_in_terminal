@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 1,
+  "generated_at": "2026-03-02T08:06:15+00:00",
+  "root": "<external-root:model-bridge-mcp>",
+  "parameters": {
+    "repeats": 3,
+    "max_results": 0,
+    "workers": 1,
+    "follow_symlinks": false,
+    "include_binary": false
+  },
+  "results": [
+    {
+      "scenario": "all-files",
+      "runs": 3,
+      "min_s": 0.015801,
+      "median_s": 0.01611,
+      "mean_s": 0.022819,
+      "max_s": 0.036545,
+      "result_count": 101
+    },
+    {
+      "scenario": "python-files",
+      "runs": 3,
+      "min_s": 0.014603,
+      "median_s": 0.015385,
+      "mean_s": 0.015287,
+      "max_s": 0.015875,
+      "result_count": 70
+    },
+    {
+      "scenario": "todo-content",
+      "runs": 3,
+      "min_s": 0.018248,
+      "median_s": 0.018439,
+      "mean_s": 0.018684,
+      "max_s": 0.019365,
+      "result_count": 0
+    }
+  ]
+}
