@@ -50,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Override LLM model")
     parser.add_argument("--api-key", help="One-off API key")
     parser.add_argument("--no-rerank", action="store_true", help="Skip semantic re-ranking")
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Use local heuristic query parsing only (skip API key and LLM calls)",
+    )
     parser.add_argument("--no-cache", action="store_true", help="Disable search cache for this command")
     parser.add_argument(
         "--cache-stats",
@@ -614,10 +619,12 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr
         )
 
-    api_key = get_api_key(cli_key=args.api_key)
-    if not api_key:
-        print("Error: No API key configured. Run `askfind config set-key`.", file=sys.stderr)
-        return 2
+    api_key: str | None = None
+    if not args.offline:
+        api_key = get_api_key(cli_key=args.api_key)
+        if not api_key:
+            print("Error: No API key configured. Run `askfind config set-key`.", file=sys.stderr)
+            return 2
 
     model = args.model or config.model
     max_results = args.max_results or config.max_results
@@ -634,11 +641,13 @@ def main(argv: list[str] | None = None) -> int:
     cache_key: str | None = None
     root_fingerprint: str | None = None
     if cache is not None:
+        cache_model = "__offline_fallback__" if args.offline else model
+        cache_base_url = "offline://fallback" if args.offline else config.base_url
         cache_key = build_search_cache_key(
             query=args.query,
             root=root_path,
-            model=model,
-            base_url=config.base_url,
+            model=cache_model,
+            base_url=cache_base_url,
             max_results=max_results,
             no_rerank=args.no_rerank,
             respect_ignore_files=respect_ignore_files,
@@ -674,44 +683,11 @@ def main(argv: list[str] | None = None) -> int:
             logger.debug("Cache miss for query execution")
 
         if cached_paths is None:
-            logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
             fallback_used = False
             fallback_reason: str | None = None
-            with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
-                try:
-                    logger.debug(f"Sending query to LLM: {args.query}")
-                    raw_response = client.extract_filters(args.query)
-                    logger.debug(
-                        f"Received LLM response: {raw_response[:200]}..."
-                        if len(raw_response) > 200
-                        else f"Received LLM response: {raw_response}"
-                    )
-                    filters = parse_llm_response(raw_response)
-                    if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
-                        fallback_filters = parse_query_fallback(args.query)
-                        if has_meaningful_filters(fallback_filters):
-                            filters = fallback_filters
-                            fallback_used = True
-                            fallback_reason = "empty_llm_filters"
-                except httpx.HTTPError as exc:
-                    fallback_filters = parse_query_fallback(args.query)
-                    if has_meaningful_filters(fallback_filters):
-                        filters = fallback_filters
-                        fallback_used = True
-                        fallback_reason = f"http_{exc.__class__.__name__.lower()}"
-                    else:
-                        raise
-                except json_module.JSONDecodeError:
-                    fallback_filters = parse_query_fallback(args.query)
-                    if has_meaningful_filters(fallback_filters):
-                        filters = fallback_filters
-                        fallback_used = True
-                        fallback_reason = "invalid_llm_json"
-                    else:
-                        raise
 
-                if isinstance(filters, SearchFilters):
-                    filters.similarity_threshold = similarity_threshold
+            def _run_search(parsed_filters: SearchFilters) -> list[FileResult]:
+                parsed_filters.similarity_threshold = similarity_threshold
                 index_options = IndexOptions(
                     respect_ignore_files=respect_ignore_files,
                     follow_symlinks=follow_symlinks,
@@ -722,7 +698,7 @@ def main(argv: list[str] | None = None) -> int:
                 index_diagnostics = IndexQueryDiagnostics()
                 indexed_paths = query_index(
                     root=root_path,
-                    filters=filters,
+                    filters=parsed_filters,
                     max_results=max_results,
                     options=index_options,
                     diagnostics=index_diagnostics,
@@ -733,7 +709,7 @@ def main(argv: list[str] | None = None) -> int:
                     paths = list(
                         walk_and_filter(
                             root_path,
-                            filters,
+                            parsed_filters,
                             max_results=max_results,
                             respect_ignore_files=respect_ignore_files,
                             follow_symlinks=follow_symlinks,
@@ -746,12 +722,74 @@ def main(argv: list[str] | None = None) -> int:
                     index_stats.record_hit()
                     logger.debug("Index query hit; using indexed paths")
                     paths = indexed_paths
-                results = [FileResult.from_path(p) for p in paths]
+                return [FileResult.from_path(p) for p in paths]
 
-                # Optional LLM re-ranking for semantic relevance
-                if not args.no_rerank and not fallback_used and len(results) > 1:
-                    from askfind.search.reranker import rerank_results
-                    results = rerank_results(client, args.query, results)
+            if args.offline:
+                logger.debug("Offline mode enabled; skipping API key and LLM filter extraction")
+                offline_filters = parse_query_fallback(args.query)
+                if not has_meaningful_filters(offline_filters):
+                    print(
+                        "Error: --offline query is too broad; add at least one concrete filter.",
+                        file=sys.stderr,
+                    )
+                    if args.cache_stats:
+                        _emit_cache_stats(cache)
+                        _emit_index_stats(index_stats)
+                        _emit_llm_fallback_stats(llm_fallback_stats)
+                    return 2
+                results = _run_search(offline_filters)
+            else:
+                logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
+                if api_key is None:
+                    raise RuntimeError("API key unexpectedly missing in online mode")
+                with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
+                    try:
+                        logger.debug(f"Sending query to LLM: {args.query}")
+                        raw_response = client.extract_filters(args.query)
+                        logger.debug(
+                            f"Received LLM response: {raw_response[:200]}..."
+                            if len(raw_response) > 200
+                            else f"Received LLM response: {raw_response}"
+                        )
+                        filters = parse_llm_response(raw_response)
+                        if not isinstance(filters, SearchFilters):
+                            filters = SearchFilters()
+                        if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
+                            fallback_filters = parse_query_fallback(args.query)
+                            if has_meaningful_filters(fallback_filters):
+                                filters = fallback_filters
+                                fallback_used = True
+                                fallback_reason = "empty_llm_filters"
+                    except httpx.HTTPError as exc:
+                        fallback_filters = parse_query_fallback(args.query)
+                        if has_meaningful_filters(fallback_filters):
+                            filters = fallback_filters
+                            fallback_used = True
+                            fallback_reason = f"http_{exc.__class__.__name__.lower()}"
+                        else:
+                            raise
+                    except json_module.JSONDecodeError:
+                        fallback_filters = parse_query_fallback(args.query)
+                        if has_meaningful_filters(fallback_filters):
+                            filters = fallback_filters
+                            fallback_used = True
+                            fallback_reason = "invalid_llm_json"
+                        else:
+                            raise
+
+                    results = _run_search(filters)
+
+                    # Optional LLM re-ranking for semantic relevance
+                    if not args.no_rerank and not fallback_used and len(results) > 1:
+                        from askfind.search.reranker import rerank_results
+                        results = rerank_results(client, args.query, results)
+
+                if fallback_used:
+                    llm_fallback_stats.record(fallback_reason)
+                    print(
+                        "Warning: LLM unavailable; using heuristic fallback filters.",
+                        file=sys.stderr,
+                    )
 
             if cache is not None and cache_key is not None and root_fingerprint is not None:
                 try:
@@ -762,12 +800,6 @@ def main(argv: list[str] | None = None) -> int:
                     )
                 except OSError:
                     logger.debug("Cache write failed; continuing without cache", exc_info=True)
-            if fallback_used:
-                llm_fallback_stats.record(fallback_reason)
-                print(
-                    "Warning: LLM unavailable; using heuristic fallback filters.",
-                    file=sys.stderr,
-                )
 
         if not results:
             if args.cache_stats:

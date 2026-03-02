@@ -134,6 +134,11 @@ class TestBuildParser:
         args = parser.parse_args(["test", "--similarity-threshold", "0.8"])
         assert args.similarity_threshold == 0.8
 
+    def test_offline_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--offline"])
+        assert args.offline is True
+
 
 class TestValidateBaseUrl:
     def test_accepts_https_remote(self):
@@ -1467,6 +1472,80 @@ class TestMainAdditionalBranches:
         assert str(py_file) in captured.out
         assert str(txt_file) not in captured.out
         assert "heuristic fallback" in captured.err.lower()
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key")
+    @patch("askfind.cli.Config.from_file")
+    def test_offline_mode_skips_api_key_and_llm(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        py_file = tmp_path / "matched.py"
+        py_file.write_text("print('ok')\n")
+        txt_file = tmp_path / "note.txt"
+        txt_file.write_text("hello\n")
+
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+
+        result = main(["python files", "--offline", "--root", str(tmp_path), "--no-rerank"])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(py_file) in captured.out
+        assert str(txt_file) not in captured.out
+        mock_get_key.assert_not_called()
+        mock_llm_cls.assert_not_called()
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key")
+    @patch("askfind.cli.Config.from_file")
+    def test_offline_mode_rejects_query_without_meaningful_filters(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+
+        result = main(["find files", "--offline", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "offline" in captured.err.lower()
+        mock_get_key.assert_not_called()
+        mock_llm_cls.assert_not_called()
+
+    @patch("askfind.cli.query_index")
+    @patch("askfind.cli.walk_and_filter")
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key")
+    @patch("askfind.cli.Config.from_file")
+    def test_offline_mode_cache_stats_with_index_hit(
+        self,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_walk,
+        mock_query_index,
+        tmp_path,
+        capsys,
+    ):
+        file_a = tmp_path / "a.py"
+        file_a.write_text("a")
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+        mock_query_index.return_value = [file_a]
+
+        result = main(["python files", "--offline", "--cache-stats", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "index: hits=1 fallbacks=0 reasons=none" in captured.err
+        assert "llm_fallback: count=0 reasons=none" in captured.err
+        mock_get_key.assert_not_called()
+        mock_llm_cls.assert_not_called()
+        mock_walk.assert_not_called()
 
 
 class TestIndexSubcommand:
