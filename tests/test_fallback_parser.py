@@ -55,3 +55,16 @@ def test_parse_query_fallback_preserves_quoted_has_phrase_with_in():
     filters = parse_query_fallback('files containing "error in auth"')
 
     assert filters.has == ["error in auth"]
+
+
+def test_parse_query_fallback_does_not_treat_go_verb_as_language_hint():
+    filters = parse_query_fallback("find files to go through this week")
+
+    assert filters.ext is None
+    assert filters.mod == ">7d"
+
+
+def test_parse_query_fallback_ignores_generic_repo_scope_terms_as_paths():
+    filters = parse_query_fallback("find files in this project")
+
+    assert filters == SearchFilters()

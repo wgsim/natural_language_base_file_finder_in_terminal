@@ -94,12 +94,78 @@ def test_main_returns_failure_when_parallel_exceeds_threshold(monkeypatch, capsy
     assert "performance regression gate failed" in captured.err
 
 
+def test_main_returns_success_when_ratio_equals_threshold(monkeypatch, capsys):
+    args = Namespace(
+        root=".",
+        scenario=["all-files"],
+        repeats=5,
+        max_results=0,
+        ratio_threshold=1.3,
+        follow_symlinks=False,
+        include_binary=False,
+    )
+    monkeypatch.setattr(GATE, "_parse_args", lambda **_kwargs: args)
+    monkeypatch.setattr(
+        GATE,
+        "_load_benchmark_module",
+        lambda: types.SimpleNamespace(SCENARIOS={"all-files": object()}),
+    )
+
+    def fake_run_worker_median(*, scenario_name, traversal_workers, **_kwargs):
+        if scenario_name == "all-files" and traversal_workers == 1:
+            return (1.0, 50)
+        if scenario_name == "all-files" and traversal_workers == 4:
+            return (1.3, 50)
+        raise AssertionError("unexpected benchmark call")
+
+    monkeypatch.setattr(GATE, "_run_worker_median", fake_run_worker_median)
+
+    assert GATE.main() == 0
+    captured = capsys.readouterr()
+    assert "performance regression gate passed" in captured.out
+    assert captured.err == ""
+
+
+def test_main_returns_failure_when_benchmark_median_is_non_finite(monkeypatch, capsys):
+    args = Namespace(
+        root=".",
+        scenario=["all-files"],
+        repeats=5,
+        max_results=0,
+        ratio_threshold=1.3,
+        follow_symlinks=False,
+        include_binary=False,
+    )
+    monkeypatch.setattr(GATE, "_parse_args", lambda **_kwargs: args)
+    monkeypatch.setattr(
+        GATE,
+        "_load_benchmark_module",
+        lambda: types.SimpleNamespace(SCENARIOS={"all-files": object()}),
+    )
+
+    def fake_run_worker_median(*, scenario_name, traversal_workers, **_kwargs):
+        if scenario_name == "all-files" and traversal_workers == 1:
+            return (float("nan"), 50)
+        if scenario_name == "all-files" and traversal_workers == 4:
+            return (1.0, 50)
+        raise AssertionError("unexpected benchmark call")
+
+    monkeypatch.setattr(GATE, "_run_worker_median", fake_run_worker_median)
+
+    assert GATE.main() == 1
+    captured = capsys.readouterr()
+    assert "performance regression gate failed" in captured.err
+    assert "invalid median values" in captured.err
+
+
 @pytest.mark.parametrize(
     ("argv", "expected_message"),
     [
         (["--repeats", "0"], "--repeats must be >= 1"),
         (["--max-results", "-1"], "--max-results must be >= 0"),
         (["--ratio-threshold", "0.99"], "--ratio-threshold must be >= 1.0"),
+        (["--ratio-threshold", "inf"], "--ratio-threshold must be finite"),
+        (["--ratio-threshold", "nan"], "--ratio-threshold must be finite"),
     ],
 )
 def test_parse_args_validation_rejects_invalid_values(argv, expected_message, capsys):
