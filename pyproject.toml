@@ -9,7 +9,7 @@ description = "Natural language file finder for the terminal"
 readme = "README.md"
 license = {text = "MIT"}
 authors = [
-    {name = "Your Name", email = "your.email@example.com"}
+    {name = "wgsim"}
 ]
 keywords = ["cli", "search", "files", "llm", "natural-language"]
 classifiers = [
