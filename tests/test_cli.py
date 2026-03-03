@@ -28,6 +28,7 @@ def _make_mock_config(default_root="."):
     mock_config.search_archives = False
     mock_config.similarity_threshold = 0.55
     mock_config.editor = "vim"
+    mock_config.llm_mode = "always"
     return mock_config
 
 
@@ -138,6 +139,11 @@ class TestBuildParser:
         parser = build_parser()
         args = parser.parse_args(["test", "--offline"])
         assert args.offline is True
+
+    def test_llm_mode_flag(self):
+        parser = build_parser()
+        args = parser.parse_args(["test", "--llm-mode", "auto"])
+        assert args.llm_mode == "auto"
 
 
 class TestValidateBaseUrl:
@@ -647,6 +653,21 @@ class TestConfigSubcommand:
         mock_config.save.assert_called_once()
 
     @patch("askfind.cli.Config.from_file")
+    def test_config_set_llm_mode_success(self, mock_config_cls):
+        mock_config = MagicMock()
+        mock_config_cls.return_value = mock_config
+        result = main(["config", "set", "llm_mode", "auto"])
+        assert result == 0
+        assert mock_config.llm_mode == "auto"
+        mock_config.save.assert_called_once()
+
+    @patch("askfind.cli.Config.from_file")
+    def test_config_set_llm_mode_invalid_value_returns_2(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "llm_mode", "smart"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
     def test_config_set_respect_ignore_files_success(self, mock_config_cls):
         mock_config = MagicMock()
         mock_config_cls.return_value = mock_config
@@ -838,6 +859,23 @@ class TestMainAdditionalBranches:
 
         assert result == 0
         assert getattr(mock_config, "offline_mode") is True
+        mock_session_cls.assert_called_once_with(mock_config, tmp_path.resolve())
+        mock_session.run.assert_called_once()
+
+    @patch("askfind.interactive.session.InteractiveSession")
+    @patch("askfind.cli.Config.from_file")
+    def test_interactive_session_llm_mode_flag_propagates_to_config(
+        self, mock_config_cls, mock_session_cls, tmp_path
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config_cls.return_value = mock_config
+        mock_session = MagicMock()
+        mock_session_cls.return_value = mock_session
+
+        result = main(["--interactive-session", "--llm-mode", "auto", "--root", str(tmp_path)])
+
+        assert result == 0
+        assert getattr(mock_config, "llm_mode") == "auto"
         mock_session_cls.assert_called_once_with(mock_config, tmp_path.resolve())
         mock_session.run.assert_called_once()
 
@@ -1563,6 +1601,78 @@ class TestMainAdditionalBranches:
         mock_get_key.assert_not_called()
         mock_llm_cls.assert_not_called()
         mock_walk.assert_not_called()
+
+
+class TestLLMMode:
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key")
+    @patch("askfind.cli.Config.from_file")
+    def test_llm_mode_auto_simple_query_skips_api_key_and_llm(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        root = tmp_path / "repo"
+        src = root / "src"
+        src.mkdir(parents=True)
+        matched = src / "keep.py"
+        matched.write_text("print('ok')\n")
+
+        mock_config = _make_mock_config(default_root=root)
+        mock_config.cache_enabled = False
+        mock_config.llm_mode = "always"
+        mock_config_cls.return_value = mock_config
+
+        result = main(
+            [
+                "python files in src",
+                "--llm-mode",
+                "auto",
+                "--root",
+                str(root),
+                "--no-rerank",
+            ]
+        )
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert str(matched) in captured.out
+        mock_get_key.assert_not_called()
+        mock_llm_cls.assert_not_called()
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value=None)
+    @patch("askfind.cli.Config.from_file")
+    def test_llm_mode_auto_ambiguous_query_requires_api_key(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+
+        result = main(["find files", "--llm-mode", "auto", "--root", str(tmp_path), "--no-rerank"])
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "No API key configured" in captured.err
+        mock_get_key.assert_called_once()
+        mock_llm_cls.assert_not_called()
+
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key")
+    @patch("askfind.cli.Config.from_file")
+    def test_llm_mode_off_rejects_broad_query_without_api_key(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, tmp_path, capsys
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.cache_enabled = False
+        mock_config_cls.return_value = mock_config
+
+        result = main(["find files", "--llm-mode", "off", "--root", str(tmp_path)])
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "too broad" in captured.err.lower()
+        mock_get_key.assert_not_called()
+        mock_llm_cls.assert_not_called()
 
 
 class TestOfflineEndToEnd:
