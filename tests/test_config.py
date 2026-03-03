@@ -51,6 +51,23 @@ class TestConfig:
         assert config.model == "gpt-4o"
         assert config.base_url == "https://openrouter.ai/api/v1"  # default preserved
 
+    def test_malformed_toml_returns_defaults(self, tmp_path):
+        config_file = tmp_path / "config.toml"
+        config_file.write_text("[provider\nmodel = \"gpt-4o\"\n", encoding="utf-8")
+
+        config = Config.from_file(config_file)
+
+        assert config == Config()
+
+    def test_toml_io_error_returns_defaults(self, tmp_path):
+        config_file = tmp_path / "config.toml"
+        config_file.write_text("[provider]\nmodel = \"gpt-4o\"\n", encoding="utf-8")
+
+        with patch("askfind.config.tomllib.load", side_effect=OSError("boom")):
+            config = Config.from_file(config_file)
+
+        assert config == Config()
+
     def test_save_and_reload(self, tmp_path):
         config = Config(
             model="custom-model",
@@ -114,6 +131,22 @@ class TestConfig:
         config = Config.from_file(config_file)
         assert config.cache_enabled is True
         assert config.cache_ttl_seconds == 300
+
+    def test_invalid_negative_max_results_falls_back_to_default(self, tmp_path):
+        toml_content = b"[search]\nmax_results = -5\n"
+        config_file = tmp_path / "config.toml"
+        config_file.write_bytes(toml_content)
+
+        config = Config.from_file(config_file)
+        assert config.max_results == 50
+
+    def test_invalid_bool_max_results_falls_back_to_default(self, tmp_path):
+        toml_content = b"[search]\nmax_results = true\n"
+        config_file = tmp_path / "config.toml"
+        config_file.write_bytes(toml_content)
+
+        config = Config.from_file(config_file)
+        assert config.max_results == 50
 
     def test_invalid_similarity_threshold_falls_back_to_default(self, tmp_path):
         toml_content = b"[search]\nsimilarity_threshold = 1.5\n"

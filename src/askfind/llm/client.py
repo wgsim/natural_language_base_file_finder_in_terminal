@@ -45,6 +45,10 @@ class _ExtractFiltersDiskCacheEntry(TypedDict):
     expires_at: float
 
 
+class LLMResponseSchemaError(ValueError):
+    """Raised when LLM response payload does not match expected schema."""
+
+
 class LLMClient:
     """Client for OpenAI-compatible chat completion APIs."""
 
@@ -293,8 +297,8 @@ class LLMClient:
             },
         )
         response.raise_for_status()
-        data = cast(_ChatResponse, response.json())
-        content = data["choices"][0]["message"]["content"]
+        data = cast(object, response.json())
+        content = self._extract_message_content(data)
         with cls._extract_filters_cache_lock:
             cls._extract_filters_cache[cache_key] = (
                 monotonic() + cls._EXTRACT_FILTERS_CACHE_TTL_SECONDS,
@@ -325,12 +329,30 @@ class LLMClient:
             },
         )
         response.raise_for_status()
-        data = cast(_ChatResponse, response.json())
-        content = data["choices"][0]["message"]["content"].strip()
+        data = cast(object, response.json())
+        content = self._extract_message_content(data)
         ranked = [line.strip() for line in content.splitlines() if line.strip()]
         # Only return paths that were in the original list
         valid = set(file_list)
         return [p for p in ranked if p in valid]
+
+    @staticmethod
+    def _extract_message_content(payload: object) -> str:
+        if not isinstance(payload, dict):
+            raise LLMResponseSchemaError("response is not an object")
+        choices = payload.get("choices")
+        if not isinstance(choices, list) or not choices:
+            raise LLMResponseSchemaError("response.choices is missing or empty")
+        first_choice = choices[0]
+        if not isinstance(first_choice, dict):
+            raise LLMResponseSchemaError("response.choices[0] is invalid")
+        message = first_choice.get("message")
+        if not isinstance(message, dict):
+            raise LLMResponseSchemaError("response.choices[0].message is invalid")
+        content = message.get("content")
+        if not isinstance(content, str) or not content.strip():
+            raise LLMResponseSchemaError("response.choices[0].message.content is empty")
+        return content.strip()
 
     def close(self) -> None:
         self._http.close()

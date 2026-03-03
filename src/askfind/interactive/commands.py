@@ -20,7 +20,11 @@ MAX_PREVIEW_SIZE = 10 * 1024 * 1024
 
 def copy_path(result: FileResult) -> None:
     path_str = str(result.path)
-    _copy_to_clipboard(path_str)
+    try:
+        _copy_to_clipboard(path_str)
+    except (OSError, subprocess.SubprocessError) as e:
+        console.print(f"[yellow]Clipboard unavailable: {e}[/yellow]")
+        return
     console.print(f"[green]Copied: {path_str}[/green]")
 
 
@@ -36,10 +40,17 @@ def copy_content(result: FileResult) -> None:
             console.print(f"[yellow]File too large ({file_size / 1024 / 1024:.1f} MB). Max: {MAX_CLIPBOARD_SIZE / 1024 / 1024:.0f} MB[/yellow]")
             return
         content = result.path.read_text(errors="replace")
-        _copy_to_clipboard(content)
-        console.print(f"[green]Copied content of: {result.path.name}[/green]")
     except OSError as e:
         console.print(f"[red]Error reading file: {e}[/red]")
+        return
+
+    try:
+        _copy_to_clipboard(content)
+    except (OSError, subprocess.SubprocessError) as e:
+        console.print(f"[yellow]Clipboard unavailable: {e}[/yellow]")
+        return
+
+    console.print(f"[green]Copied content of: {result.path.name}[/green]")
 
 
 def preview(result: FileResult) -> None:
@@ -68,6 +79,14 @@ def preview(result: FileResult) -> None:
 
 
 def open_in_editor(result: FileResult, editor: str = "vim") -> None:
+    try:
+        if result.path.is_symlink():
+            console.print(f"[red]Skipping symlink: {result.path}[/red]")
+            return
+    except OSError as e:
+        console.print(f"[red]Error opening editor: {e}[/red]")
+        return
+
     # Validate editor to prevent command injection
     # Only allow simple executable names, no paths or shell metacharacters
     if not editor or any(c in editor for c in ["/", "\\", ";", "&", "|", "$", "`", "\n", "\r"]):

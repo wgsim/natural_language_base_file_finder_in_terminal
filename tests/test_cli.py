@@ -178,6 +178,16 @@ class TestMain:
         result = main([])
         assert result == 2
 
+    @patch("askfind.cli.Config.from_file")
+    def test_negative_max_returns_2(self, mock_config_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+
+        result = main(["query", "--max", "-1"])
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "Error: --max must be >= 0." in captured.err
+
     @patch("askfind.cli.get_api_key", return_value=None)
     def test_query_without_api_key_returns_2(self, mock_get_key):
         result = main(["find python files"])
@@ -584,6 +594,12 @@ class TestConfigSubcommand:
         assert result == 2
 
     @patch("askfind.cli.Config.from_file")
+    def test_config_set_rejects_negative_max_results(self, mock_config_cls):
+        mock_config_cls.return_value = MagicMock()
+        result = main(["config", "set", "max_results", "-1"])
+        assert result == 2
+
+    @patch("askfind.cli.Config.from_file")
     def test_config_set_rejects_non_integer_parallel_workers(self, mock_config_cls):
         mock_config_cls.return_value = MagicMock()
         result = main(["config", "set", "parallel_workers", "many"])
@@ -987,6 +1003,67 @@ class TestMainAdditionalBranches:
         assert result == 1
         assert "Warning: --api-key exposes your key" in captured.err
         mock_get_key.assert_called_once_with(cli_key="sk-inline")
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    def test_negative_config_max_results_falls_back_to_default(
+        self, mock_config_cls, mock_get_key, mock_llm_cls, mock_parse, mock_walk, tmp_path
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config.max_results = -5
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(mock_llm_cls)
+
+        result = main(["query", "--root", str(tmp_path)])
+
+        assert result == 1
+        assert mock_walk.call_args.kwargs["max_results"] == 50
+
+    @patch("askfind.cli.walk_and_filter", return_value=[])
+    @patch("askfind.cli.parse_llm_response", return_value={})
+    @patch("askfind.cli.LLMClient")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.logger.debug")
+    def test_debug_logging_hides_raw_query_and_llm_response(
+        self,
+        mock_log_debug,
+        mock_config_cls,
+        mock_get_key,
+        mock_llm_cls,
+        mock_parse,
+        mock_walk,
+        tmp_path,
+    ):
+        mock_config = _make_mock_config(default_root=tmp_path)
+        mock_config_cls.return_value = mock_config
+        _setup_mock_llm_client(
+            mock_llm_cls,
+            raw_response='{"token":"secret-response","ext":[".py"]}',
+        )
+
+        result = main(
+            [
+                "--debug",
+                "private query text",
+                "--api-key",
+                "sk-secret-value",
+                "--root",
+                str(tmp_path),
+            ]
+        )
+
+        assert result == 1
+        debug_payload = " ".join(
+            " ".join(str(item) for item in call.args)
+            for call in mock_log_debug.call_args_list
+        )
+        assert "private query text" not in debug_payload
+        assert "secret-response" not in debug_payload
+        assert "sk-secret-value" not in debug_payload
 
     @patch("askfind.cli.LLMClient")
     @patch("askfind.cli.get_api_key", return_value="sk-test")

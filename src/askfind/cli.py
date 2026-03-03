@@ -240,7 +240,13 @@ def _read_bool_config(value: object, *, default: bool) -> bool:
 
 
 def _read_positive_int_config(value: object, *, default: int) -> int:
-    if isinstance(value, int) and value >= 1:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
+        return value
+    return default
+
+
+def _read_non_negative_int_config(value: object, *, default: int) -> int:
+    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
         return value
     return default
 
@@ -470,6 +476,9 @@ def _handle_config(args: argparse.Namespace) -> int:
             except ValueError:
                 print(f"Error: '{args.key}' must be an integer.", file=sys.stderr)
                 return 2
+            if args.key == "max_results" and value < 0:
+                print("Error: 'max_results' must be >= 0.", file=sys.stderr)
+                return 2
             if args.key in {"parallel_workers", "cache_ttl_seconds"} and value < 1:
                 print(f"Error: '{args.key}' must be >= 1.", file=sys.stderr)
                 return 2
@@ -624,7 +633,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         setup_logging()
 
-    logger.debug(f"Starting askfind with args: {raw_argv}")
+    logger.debug("Starting askfind (argc=%d)", len(raw_argv))
 
     # Check if first arg is "config" subcommand
     if raw_argv and len(raw_argv) > 0 and raw_argv[0] == "config":
@@ -674,9 +683,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.workers < 0:
         print("Error: --workers must be >= 0.", file=sys.stderr)
         return 2
+    if args.max_results < 0:
+        print("Error: --max must be >= 0.", file=sys.stderr)
+        return 2
     configured_workers = _read_positive_int_config(
         getattr(config, "parallel_workers", 1),
         default=1,
+    )
+    configured_max_results = _read_non_negative_int_config(
+        getattr(config, "max_results", 50),
+        default=50,
     )
     parallel_workers = args.workers or configured_workers
     configured_similarity_threshold = _read_similarity_threshold_config(
@@ -749,7 +765,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
     model = args.model or config.model
-    max_results = args.max_results or config.max_results
+    max_results = args.max_results or configured_max_results
 
     # Validate query length
     MAX_QUERY_LENGTH = 1000
@@ -892,18 +908,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 results = _run_search(fallback_filters)
             else:
-                logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
+                logger.debug("Initializing LLM client")
                 if api_key is None:
                     raise RuntimeError("API key unexpectedly missing in online mode")
                 with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
                     try:
-                        logger.debug(f"Sending query to LLM: {args.query}")
+                        logger.debug("Sending query to LLM")
                         raw_response = client.extract_filters(args.query)
-                        logger.debug(
-                            f"Received LLM response: {raw_response[:200]}..."
-                            if len(raw_response) > 200
-                            else f"Received LLM response: {raw_response}"
-                        )
+                        logger.debug("Received LLM response payload")
                         filters = parse_llm_response(raw_response)
                         if not isinstance(filters, SearchFilters):
                             filters = SearchFilters()

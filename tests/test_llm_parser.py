@@ -96,6 +96,22 @@ class TestParseLlmResponse:
         filters = parse_llm_response(raw)
         assert filters.similar == "auth.py"
 
+    def test_rejects_unsafe_similar_path_values(self):
+        absolute = parse_llm_response('{"similar": "/etc/passwd"}')
+        assert absolute.similar is None
+
+        home = parse_llm_response('{"similar": "~/.ssh/id_rsa"}')
+        assert home.similar is None
+
+        nul = parse_llm_response('{"similar": "auth.py\\u0000"}')
+        assert nul.similar is None
+
+        traversal = parse_llm_response('{"similar": "../secrets.py"}')
+        assert traversal.similar is None
+
+        traversal_nested = parse_llm_response('{"similar": "pkg/../secrets.py"}')
+        assert traversal_nested.similar is None
+
     def test_loc_and_complexity_constraints(self):
         raw = '{"loc": ">200", "complexity": "<15"}'
         filters = parse_llm_response(raw)

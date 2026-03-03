@@ -29,7 +29,10 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      # TODO(security): Pin third-party actions to commit SHAs.
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -67,7 +70,7 @@ jobs:
             echo "pip-audit failed with unexpected exit code: $audit_exit" >&2
             exit "$audit_exit"
           fi
-          python scripts/ci/pip_audit_gate.py --input pip-audit.json --min-severity high
+          python scripts/ci/pip_audit_gate.py --input pip-audit.json --min-severity medium
 
       - name: Run tests
         run: PYTHONPATH=src pytest -q --cov=src/askfind --cov-fail-under=95
@@ -80,7 +83,10 @@ jobs:
 
   offline-smoke:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      # TODO(security): Pin third-party actions to commit SHAs.
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -126,7 +132,10 @@ jobs:
   benchmark-compare:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_benchmark_compare == 'true' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      # TODO(security): Pin third-party actions to commit SHAs.
       - name: Checkout
         uses: actions/checkout@v4
 

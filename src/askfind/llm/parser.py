@@ -101,6 +101,21 @@ def _validate_mod_absolute_value(value: str) -> str | None:
     return parsed.isoformat(timespec="seconds")
 
 
+def _sanitize_relative_path_reference(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()[:_MAX_TERM_LENGTH]
+    try:
+        path = Path(normalized)
+    except (ValueError, OSError):
+        return None
+    if path.is_absolute() or normalized.startswith("~") or "\x00" in normalized:
+        return None
+    if any(part == ".." for part in path.parts):
+        return None
+    return path.as_posix()
+
+
 def _validate_and_sanitize_value(key: str, value: Any) -> Any | None:
     """Validate and sanitize field values from LLM response.
 
@@ -121,25 +136,11 @@ def _validate_and_sanitize_value(key: str, value: Any) -> Any | None:
         return value
 
     # Sanitize path fields to prevent directory traversal
-    if key in ("path", "not_path"):
-        if not isinstance(value, str):
-            return None
-        value = str(value).strip()[:_MAX_TERM_LENGTH]
-        # Convert to relative path and normalize
-        try:
-            p = Path(value)
-            # Reject absolute paths
-            if p.is_absolute() or value.startswith("~") or "\x00" in value:
-                return None
-            # Reject any parent references
-            if any(part == ".." for part in p.parts):
-                return None
-            return p.as_posix()
-        except (ValueError, OSError):
-            return None
+    if key in ("path", "not_path", "similar"):
+        return _sanitize_relative_path_reference(value)
 
     # Validate string fields
-    if key in ("name", "not_name", "regex", "fuzzy", "similar"):
+    if key in ("name", "not_name", "regex", "fuzzy"):
         if not isinstance(value, str):
             return None
         return str(value).strip()[:_MAX_TERM_LENGTH]

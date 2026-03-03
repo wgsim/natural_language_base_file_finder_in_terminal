@@ -31,6 +31,21 @@ class TestCopyPath:
         mock_clipboard.assert_called_once_with(str(file_path))
         mock_print.assert_called_once_with(f"[green]Copied: {file_path}[/green]")
 
+    @patch("askfind.interactive.commands.console.print")
+    @patch(
+        "askfind.interactive.commands._copy_to_clipboard",
+        side_effect=subprocess.SubprocessError("clipboard unavailable"),
+    )
+    def test_copy_path_handles_clipboard_failure(self, mock_clipboard, mock_print, tmp_path):
+        file_path = tmp_path / "example.txt"
+        file_path.write_text("hello")
+        result = FileResult.from_path(file_path)
+
+        copy_path(result)
+
+        mock_clipboard.assert_called_once_with(str(file_path))
+        mock_print.assert_called_once_with("[yellow]Clipboard unavailable: clipboard unavailable[/yellow]")
+
 
 class TestCopyContent:
     @patch("askfind.interactive.commands._copy_to_clipboard")
@@ -86,6 +101,21 @@ class TestCopyContent:
         mock_clipboard.assert_not_called()
         mock_print.assert_called_once()
         assert "Error reading file:" in mock_print.call_args.args[0]
+
+    @patch("askfind.interactive.commands.console.print")
+    @patch(
+        "askfind.interactive.commands._copy_to_clipboard",
+        side_effect=subprocess.SubprocessError("clipboard unavailable"),
+    )
+    def test_copy_content_handles_clipboard_failure(self, mock_clipboard, mock_print, tmp_path):
+        file_path = tmp_path / "example.txt"
+        file_path.write_text("hello")
+        result = FileResult.from_path(file_path)
+
+        copy_content(result)
+
+        mock_clipboard.assert_called_once_with("hello")
+        mock_print.assert_called_once_with("[yellow]Clipboard unavailable: clipboard unavailable[/yellow]")
 
 
 class TestPreview:
@@ -154,6 +184,22 @@ class TestOpenInEditor:
         mock_which.assert_not_called()
         mock_run.assert_not_called()
         mock_print.assert_called_once_with("[red]Invalid editor value: 'vim;rm'[/red]")
+
+    @patch("askfind.interactive.commands.console.print")
+    @patch("askfind.interactive.commands.subprocess.run")
+    @patch("askfind.interactive.commands.shutil.which")
+    def test_open_in_editor_rejects_symlink_target(self, mock_which, mock_run, mock_print, tmp_path):
+        target = tmp_path / "target.txt"
+        target.write_text("hello")
+        symlink = tmp_path / "target-link.txt"
+        symlink.symlink_to(target)
+        result = FileResult.from_path(symlink)
+
+        open_in_editor(result, "vim")
+
+        mock_which.assert_not_called()
+        mock_run.assert_not_called()
+        mock_print.assert_called_once_with(f"[red]Skipping symlink: {symlink}[/red]")
 
     @patch("askfind.interactive.commands.console.print")
     @patch("askfind.interactive.commands.subprocess.run")

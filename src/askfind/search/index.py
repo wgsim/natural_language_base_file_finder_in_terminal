@@ -171,6 +171,7 @@ def query_index(
         _set_fallback_reason(diagnostics, "root_resolve_failed")
         return None
 
+    normalized_max_results = max(0, max_results)
     matches: list[Path] = []
     for raw_path in payload.paths:
         path = Path(raw_path)
@@ -181,7 +182,7 @@ def query_index(
             follow_symlinks=normalized_options.follow_symlinks,
         ):
             matches.append(path)
-            if max_results and len(matches) >= max_results:
+            if normalized_max_results and len(matches) >= normalized_max_results:
                 break
     return matches
 

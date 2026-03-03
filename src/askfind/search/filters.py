@@ -489,6 +489,15 @@ class SearchFilters:
             self._similar_resolved_failure = True
             return None
 
+        try:
+            resolved_root = root.resolve(strict=False)
+        except OSError:
+            self._similar_resolved_failure = True
+            return None
+
+        def is_within_root(path: Path) -> bool:
+            return path == resolved_root or resolved_root in path.parents
+
         candidate = Path(requested)
         if candidate.is_absolute():
             try:
@@ -496,23 +505,28 @@ class SearchFilters:
             except OSError:
                 self._similar_resolved_failure = True
                 return None
-            if resolved != root and root not in resolved.parents:
+            if not is_within_root(resolved):
                 self._similar_resolved_failure = True
                 return None
             self._similar_reference_path_cache = resolved
             return resolved
 
-        root_candidate = (root / candidate).resolve(strict=False)
+        root_candidate = (resolved_root / candidate).resolve(strict=False)
+        if not is_within_root(root_candidate):
+            self._similar_resolved_failure = True
+            return None
         if root_candidate.is_file():
             self._similar_reference_path_cache = root_candidate
             return root_candidate
 
         target_name = candidate.name
         try:
-            for path in root.rglob(target_name):
+            for path in resolved_root.rglob(target_name):
                 if path.is_file():
-                    self._similar_reference_path_cache = path.resolve(strict=False)
-                    return self._similar_reference_path_cache
+                    resolved_path = path.resolve(strict=False)
+                    if is_within_root(resolved_path):
+                        self._similar_reference_path_cache = resolved_path
+                        return self._similar_reference_path_cache
         except OSError:
             self._similar_resolved_failure = True
             return None

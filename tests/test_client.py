@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 import pytest
 
-from askfind.llm.client import LLMClient
+from askfind.llm.client import LLMClient, LLMResponseSchemaError
 
 
 class TestLLMClient:
@@ -124,6 +124,30 @@ class TestLLMClient:
 
             with pytest.raises(httpx.HTTPStatusError):
                 with LLMClient(base_url="https://api.example.com", api_key="test-key", model="gpt-4") as client:
+                    client.extract_filters("test query")
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"choices": []},
+            {"choices": [{}]},
+            {"choices": [{"message": {}}]},
+            {"choices": [{"message": {"content": ""}}]},
+            {"choices": [{"message": {"content": "   "}}]},
+        ],
+    )
+    def test_extract_filters_invalid_response_schema_raises_controlled_error(self, payload):
+        mock_response = MagicMock()
+        mock_response.json.return_value = payload
+
+        with patch("httpx.Client") as mock_client_class:
+            mock_http = MagicMock()
+            mock_http.post.return_value = mock_response
+            mock_client_class.return_value = mock_http
+
+            with LLMClient(base_url="https://api.example.com", api_key="test-key", model="gpt-4") as client:
+                with pytest.raises(LLMResponseSchemaError):
                     client.extract_filters("test query")
 
     def test_extract_filters_disk_cache_hit_across_instances(self, tmp_path: Path):
@@ -321,6 +345,27 @@ class TestLLMClient:
 
             assert result == ["file1.txt", "file2.txt"]
             assert "invalid.txt" not in result
+
+    @pytest.mark.parametrize(
+        "payload",
+        [
+            {},
+            {"choices": []},
+            {"choices": [{"message": {"content": ""}}]},
+        ],
+    )
+    def test_rerank_invalid_response_schema_raises_controlled_error(self, payload):
+        mock_response = MagicMock()
+        mock_response.json.return_value = payload
+
+        with patch("httpx.Client") as mock_client_class:
+            mock_http = MagicMock()
+            mock_http.post.return_value = mock_response
+            mock_client_class.return_value = mock_http
+
+            with LLMClient(base_url="https://api.example.com", api_key="test-key", model="gpt-4") as client:
+                with pytest.raises(LLMResponseSchemaError):
+                    client.rerank("test query", ["file1.txt"])
 
     def test_close_closes_http_client(self):
         """close() should close the HTTP client."""
