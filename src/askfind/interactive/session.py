@@ -15,6 +15,7 @@ from askfind.config import Config, get_api_key
 from askfind.interactive.commands import copy_content, copy_path, open_in_editor, preview
 from askfind.llm.client import LLMClient
 from askfind.llm.fallback import has_meaningful_filters, parse_query_fallback
+from askfind.llm.mode import DEFAULT_LLM_MODE, decide_llm_usage, normalize_llm_mode
 from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import get_logger
 from askfind.output.formatter import FileResult, human_size
@@ -43,9 +44,11 @@ class InteractiveSession:
         self.root = root.resolve()
         self.results: list[FileResult] = []
         self.offline_mode = bool(getattr(config, "offline_mode", False))
+        configured_llm_mode = normalize_llm_mode(getattr(config, "llm_mode", DEFAULT_LLM_MODE))
+        self.llm_mode = "off" if self.offline_mode else configured_llm_mode
         self.client: LLMClient | None = None
 
-        if not self.offline_mode:
+        if self.llm_mode == "always":
             api_key = get_api_key()
             if not api_key:
                 console.print("[red]No API key configured. Run `askfind config set-key`.[/red]")
@@ -161,8 +164,21 @@ class InteractiveSession:
             if not isinstance(base_url, str):
                 base_url = ""
             offline_mode = bool(getattr(self, "offline_mode", False))
-            cache_model = "__offline_fallback__" if offline_mode else model
-            cache_base_url = "offline://fallback" if offline_mode else base_url
+            llm_mode = normalize_llm_mode(getattr(self, "llm_mode", DEFAULT_LLM_MODE))
+            fallback_filters = parse_query_fallback(query)
+            llm_decision = decide_llm_usage(
+                query=query,
+                fallback_filters=fallback_filters,
+                llm_mode="off" if offline_mode else llm_mode,
+            )
+            use_llm = llm_decision.llm_called
+            cache_mode = f"{llm_mode}:{llm_decision.decision}"
+            if use_llm:
+                cache_model = f"{model}::llm_mode={cache_mode}"
+                cache_base_url = base_url
+            else:
+                cache_model = f"__fallback__::llm_mode={cache_mode}"
+                cache_base_url = "offline://fallback"
 
             cached_paths: list[Path] | None = None
             cache_key: str | None = None
@@ -207,28 +223,42 @@ class InteractiveSession:
             if cached_paths is None:
                 fallback_used = False
                 fallback_reason: str | None = None
-                if offline_mode:
-                    filters = parse_query_fallback(query)
+                if not use_llm:
+                    filters = fallback_filters
                     if not has_meaningful_filters(filters):
-                        console.print("[red]Error: --offline query is too broad; add at least one concrete filter.[/red]")
+                        if offline_mode:
+                            console.print("[red]Error: --offline query is too broad; add at least one concrete filter.[/red]")
+                        elif llm_mode == "off":
+                            console.print(
+                                "[red]Error: --llm-mode off query is too broad; add at least one concrete filter.[/red]"
+                            )
+                        else:
+                            console.print(
+                                "[red]Error: Query is too broad for heuristic mode; use --llm-mode always.[/red]"
+                            )
                         self.results = []
                         return
                 else:
                     if self.client is None:
-                        raise RuntimeError("Interactive client not initialized")
+                        api_key = get_api_key()
+                        if not api_key:
+                            raise RuntimeError("No API key configured. Run `askfind config set-key`.")
+                        self.client = LLMClient(
+                            base_url=base_url,
+                            api_key=api_key,
+                            model=model,
+                        )
                     try:
                         raw = self.client.extract_filters(query)
                         filters = parse_llm_response(raw)
                         if not isinstance(filters, SearchFilters):
                             filters = SearchFilters()
                         if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
-                            fallback_filters = parse_query_fallback(query)
                             if has_meaningful_filters(fallback_filters):
                                 filters = fallback_filters
                                 fallback_used = True
                                 fallback_reason = "empty_llm_filters"
                     except httpx.HTTPError:
-                        fallback_filters = parse_query_fallback(query)
                         if has_meaningful_filters(fallback_filters):
                             filters = fallback_filters
                             fallback_used = True

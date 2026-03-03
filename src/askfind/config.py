@@ -24,6 +24,7 @@ def get_config_path() -> Path:
 class Config:
     base_url: str = "https://openrouter.ai/api/v1"
     model: str = "openai/gpt-4o-mini"
+    llm_mode: str = "always"
     default_root: str = "."
     max_results: int = 50
     parallel_workers: int = 1
@@ -50,6 +51,7 @@ class Config:
         field_map = {
             "base_url": provider,
             "model": provider,
+            "llm_mode": provider,
             "default_root": search,
             "max_results": search,
             "parallel_workers": search,
@@ -83,6 +85,16 @@ class Config:
                 int_value = kwargs[int_key]
                 if not isinstance(int_value, int) or int_value < 1:
                     kwargs.pop(int_key)
+        if "llm_mode" in kwargs:
+            llm_mode = kwargs["llm_mode"]
+            if not isinstance(llm_mode, str):
+                kwargs.pop("llm_mode")
+            else:
+                normalized_mode = llm_mode.strip().lower()
+                if normalized_mode not in {"always", "auto", "off"}:
+                    kwargs.pop("llm_mode")
+                else:
+                    kwargs["llm_mode"] = normalized_mode
         if "similarity_threshold" in kwargs:
             threshold = kwargs["similarity_threshold"]
             if (
@@ -105,6 +117,7 @@ class Config:
             "provider": {
                 "base_url": self.base_url,
                 "model": self.model,
+                "llm_mode": self.llm_mode,
             },
             "search": {
                 "default_root": self.default_root,

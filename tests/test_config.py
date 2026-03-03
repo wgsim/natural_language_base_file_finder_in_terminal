@@ -18,6 +18,7 @@ class TestConfig:
         config = Config()
         assert config.base_url == "https://openrouter.ai/api/v1"
         assert config.model == "openai/gpt-4o-mini"
+        assert config.llm_mode == "always"
         assert config.default_root == "."
         assert config.max_results == 50
         assert config.parallel_workers == 1
@@ -53,6 +54,7 @@ class TestConfig:
     def test_save_and_reload(self, tmp_path):
         config = Config(
             model="custom-model",
+            llm_mode="auto",
             respect_ignore_files=False,
             parallel_workers=8,
             cache_enabled=False,
@@ -67,6 +69,7 @@ class TestConfig:
         config.save(config_file)
         reloaded = Config.from_file(config_file)
         assert reloaded.model == "custom-model"
+        assert reloaded.llm_mode == "auto"
         assert reloaded.respect_ignore_files is False
         assert reloaded.parallel_workers == 8
         assert reloaded.cache_enabled is False
@@ -119,6 +122,14 @@ class TestConfig:
 
         config = Config.from_file(config_file)
         assert config.similarity_threshold == 0.55
+
+    def test_invalid_llm_mode_falls_back_to_default(self, tmp_path):
+        toml_content = b'[provider]\nllm_mode = "smart"\n'
+        config_file = tmp_path / "config.toml"
+        config_file.write_bytes(toml_content)
+
+        config = Config.from_file(config_file)
+        assert config.llm_mode == "always"
 
 
 class TestGetApiKey:

@@ -15,6 +15,7 @@ from dataclasses import dataclass, field, fields
 from askfind.config import Config, get_api_key, get_config_path, set_api_key
 from askfind.llm.client import LLMClient
 from askfind.llm.fallback import has_meaningful_filters, parse_query_fallback
+from askfind.llm.mode import DEFAULT_LLM_MODE, LLMMode, decide_llm_usage, normalize_llm_mode
 from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import setup_logging, get_logger
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
@@ -54,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--offline",
         action="store_true",
         help="Use local heuristic query parsing only (skip API key and LLM calls)",
+    )
+    parser.add_argument(
+        "--llm-mode",
+        choices=("always", "auto", "off"),
+        default=None,
+        help="LLM call policy: always (default), auto (simple queries skip LLM), off (never call LLM)",
     )
     parser.add_argument("--no-cache", action="store_true", help="Disable search cache for this command")
     parser.add_argument(
@@ -228,6 +235,10 @@ def _read_similarity_threshold_config(value: object, *, default: float) -> float
     return default
 
 
+def _read_llm_mode_config(value: object, *, default: LLMMode) -> LLMMode:
+    return normalize_llm_mode(value, default=default)
+
+
 def _emit_cache_stats(cache: SearchCache | None) -> None:
     if cache is None:
         print("cache: disabled", file=sys.stderr)
@@ -291,6 +302,14 @@ def _emit_llm_fallback_stats(stats: _LLMFallbackRuntimeStats) -> None:
         )
     print(
         f"llm_fallback: count={stats.count} reasons={reasons_text}",
+        file=sys.stderr,
+    )
+
+
+def _emit_llm_mode_stats(*, mode: str, decision: str, reason: str) -> None:
+    llm_called = "yes" if decision == "llm" else "no"
+    print(
+        f"llm_mode: mode={mode} decision={decision} llm_called={llm_called} reason={reason}",
         file=sys.stderr,
     )
 
@@ -388,6 +407,7 @@ def _handle_config(args: argparse.Namespace) -> int:
         table.add_column("Value", style="green")
         table.add_row("base_url", config.base_url)
         table.add_row("model", config.model)
+        table.add_row("llm_mode", config.llm_mode)
         table.add_row("default_root", config.default_root)
         table.add_row("max_results", str(config.max_results))
         table.add_row("parallel_workers", str(config.parallel_workers))
@@ -459,6 +479,16 @@ def _handle_config(args: argparse.Namespace) -> int:
             except ValueError:
                 print(f"Error: '{args.key}' must be true/false.", file=sys.stderr)
                 return 2
+
+        if args.key == "llm_mode":
+            if not isinstance(value, str):
+                print("Error: 'llm_mode' must be one of: always, auto, off.", file=sys.stderr)
+                return 2
+            normalized = value.strip().lower()
+            if normalized not in ("always", "auto", "off"):
+                print("Error: 'llm_mode' must be one of: always, auto, off.", file=sys.stderr)
+                return 2
+            value = normalized
 
         setattr(config, args.key, value)
         config.save(get_config_path())
@@ -573,6 +603,13 @@ def main(argv: list[str] | None = None) -> int:
             print("Error: --similarity-threshold must be between 0.0 and 1.0.", file=sys.stderr)
             return 2
         similarity_threshold = args.similarity_threshold
+    configured_llm_mode = _read_llm_mode_config(
+        getattr(config, "llm_mode", DEFAULT_LLM_MODE),
+        default=DEFAULT_LLM_MODE,
+    )
+    llm_mode = normalize_llm_mode(args.llm_mode, default=configured_llm_mode)
+    if args.offline:
+        llm_mode = "off"
     if args.include_binary:
         exclude_binary_files = False
     root_value = args.root if _has_root_override(raw_argv) else config.default_root
@@ -590,6 +627,7 @@ def main(argv: list[str] | None = None) -> int:
         config.cache_enabled = cache_enabled
         config.cache_ttl_seconds = cache_ttl_seconds
         config.offline_mode = args.offline
+        config.llm_mode = llm_mode
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -610,6 +648,7 @@ def main(argv: list[str] | None = None) -> int:
         config.cache_enabled = cache_enabled
         config.cache_ttl_seconds = cache_ttl_seconds
         config.offline_mode = args.offline
+        config.llm_mode = llm_mode
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -623,13 +662,6 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr
         )
 
-    api_key: str | None = None
-    if not args.offline:
-        api_key = get_api_key(cli_key=args.api_key)
-        if not api_key:
-            print("Error: No API key configured. Run `askfind config set-key`.", file=sys.stderr)
-            return 2
-
     model = args.model or config.model
     max_results = args.max_results or config.max_results
 
@@ -639,14 +671,34 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: Query exceeds maximum length of {MAX_QUERY_LENGTH} characters.", file=sys.stderr)
         return 2
 
+    fallback_filters = parse_query_fallback(args.query)
+    llm_decision = decide_llm_usage(
+        query=args.query,
+        fallback_filters=fallback_filters,
+        llm_mode=llm_mode,
+    )
+    use_llm = llm_decision.llm_called
+
+    api_key: str | None = None
+    if use_llm:
+        api_key = get_api_key(cli_key=args.api_key)
+        if not api_key:
+            print("Error: No API key configured. Run `askfind config set-key`.", file=sys.stderr)
+            return 2
+
     cache = SearchCache(ttl_seconds=cache_ttl_seconds) if cache_enabled else None
     index_stats = _IndexQueryRuntimeStats()
     llm_fallback_stats = _LLMFallbackRuntimeStats()
     cache_key: str | None = None
     root_fingerprint: str | None = None
     if cache is not None:
-        cache_model = "__offline_fallback__" if args.offline else model
-        cache_base_url = "offline://fallback" if args.offline else config.base_url
+        cache_mode = f"{llm_mode}:{llm_decision.decision}"
+        if use_llm:
+            cache_model = f"{model}::llm_mode={cache_mode}"
+            cache_base_url = config.base_url
+        else:
+            cache_model = f"__fallback__::llm_mode={cache_mode}"
+            cache_base_url = "offline://fallback"
         cache_key = build_search_cache_key(
             query=args.query,
             root=root_path,
@@ -728,20 +780,31 @@ def main(argv: list[str] | None = None) -> int:
                     paths = indexed_paths
                 return [FileResult.from_path(p) for p in paths]
 
-            if args.offline:
-                logger.debug("Offline mode enabled; skipping API key and LLM filter extraction")
-                offline_filters = parse_query_fallback(args.query)
-                if not has_meaningful_filters(offline_filters):
-                    print(
-                        "Error: --offline query is too broad; add at least one concrete filter.",
-                        file=sys.stderr,
-                    )
+            if not use_llm:
+                if not has_meaningful_filters(fallback_filters):
+                    if args.offline:
+                        message = "Error: --offline query is too broad; add at least one concrete filter."
+                    elif llm_mode == "off":
+                        message = "Error: --llm-mode off query is too broad; add at least one concrete filter."
+                    else:
+                        message = "Error: Query is too broad for heuristic mode; use --llm-mode always."
+                    print(message, file=sys.stderr)
                     if args.cache_stats:
                         _emit_cache_stats(cache)
                         _emit_index_stats(index_stats)
                         _emit_llm_fallback_stats(llm_fallback_stats)
+                        _emit_llm_mode_stats(
+                            mode=llm_mode,
+                            decision=llm_decision.decision,
+                            reason=llm_decision.reason,
+                        )
                     return 2
-                results = _run_search(offline_filters)
+                logger.debug(
+                    "Heuristic mode selected (mode=%s reason=%s); skipping LLM",
+                    llm_mode,
+                    llm_decision.reason,
+                )
+                results = _run_search(fallback_filters)
             else:
                 logger.debug(f"Initializing LLM client with model={model}, base_url={config.base_url}")
                 if api_key is None:
@@ -759,13 +822,11 @@ def main(argv: list[str] | None = None) -> int:
                         if not isinstance(filters, SearchFilters):
                             filters = SearchFilters()
                         if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
-                            fallback_filters = parse_query_fallback(args.query)
                             if has_meaningful_filters(fallback_filters):
                                 filters = fallback_filters
                                 fallback_used = True
                                 fallback_reason = "empty_llm_filters"
                     except httpx.HTTPError as exc:
-                        fallback_filters = parse_query_fallback(args.query)
                         if has_meaningful_filters(fallback_filters):
                             filters = fallback_filters
                             fallback_used = True
@@ -773,7 +834,6 @@ def main(argv: list[str] | None = None) -> int:
                         else:
                             raise
                     except json_module.JSONDecodeError:
-                        fallback_filters = parse_query_fallback(args.query)
                         if has_meaningful_filters(fallback_filters):
                             filters = fallback_filters
                             fallback_used = True
@@ -810,6 +870,11 @@ def main(argv: list[str] | None = None) -> int:
                 _emit_cache_stats(cache)
                 _emit_index_stats(index_stats)
                 _emit_llm_fallback_stats(llm_fallback_stats)
+                _emit_llm_mode_stats(
+                    mode=llm_mode,
+                    decision=llm_decision.decision,
+                    reason=llm_decision.reason,
+                )
             return 1
 
         if args.json_output:
@@ -822,6 +887,11 @@ def main(argv: list[str] | None = None) -> int:
             _emit_cache_stats(cache)
             _emit_index_stats(index_stats)
             _emit_llm_fallback_stats(llm_fallback_stats)
+            _emit_llm_mode_stats(
+                mode=llm_mode,
+                decision=llm_decision.decision,
+                reason=llm_decision.reason,
+            )
         return 0
     except KeyboardInterrupt:
         print("\nSearch cancelled.", file=sys.stderr)

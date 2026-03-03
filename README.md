@@ -80,6 +80,9 @@ askfind "python files" --no-cache
 # Force local-only parsing (no API key / no LLM call)
 askfind "python files in src" --offline
 
+# Auto mode: simple queries use local parser, ambiguous queries call LLM
+askfind "python files in src" --llm-mode auto --no-rerank
+
 # Print cache/index counters for the command
 askfind "python files" --cache-stats
 
@@ -135,6 +138,7 @@ askfind config show
 
 # Set configuration values
 askfind config set model "gpt-4o"
+askfind config set llm_mode "auto"   # always | auto | off
 askfind config set max_results 100
 askfind config set parallel_workers 1
 askfind config set cache_enabled true
@@ -153,6 +157,8 @@ askfind config models
 
 1. **Natural Language → Filters**:
    - Default mode sends your query to an LLM which extracts structured search filters (file extensions, paths, size constraints, modification times, content patterns, etc.).
+   - `--llm-mode auto` uses local fallback parsing for simple queries and calls the LLM only for ambiguous queries.
+   - `--llm-mode off` disables all LLM calls (same extraction behavior as heuristic mode).
    - `--offline` skips the LLM and directly applies heuristic query parsing for core filters (`ext`, `path`, `not_path`, `has`, `size`, `mod`).
    - If fallback parsing yields no meaningful filters in `--offline` mode, askfind exits with a non-zero status and a concise guidance message instead of running a broad search.
 
