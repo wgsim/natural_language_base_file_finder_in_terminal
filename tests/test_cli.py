@@ -829,6 +829,83 @@ class TestConfigSubcommandAdditional:
         assert result == 3
         assert "Error: RuntimeError" in captured.err
 
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value=None)
+    def test_config_smoke_without_key_returns_2(self, mock_get_key, mock_config_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+
+        result = main(["config", "smoke"])
+        captured = capsys.readouterr()
+
+        assert result == 2
+        assert "No API key configured" in captured.err
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.post")
+    def test_config_smoke_success_returns_0(self, mock_post, mock_get_key, mock_config_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"choices": [{"message": {"content": "OK"}}]}
+        mock_post.return_value = mock_response
+
+        result = main(["config", "smoke", "--prompt", "Return exactly: OK"])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        assert "Smoke OK: endpoint=/chat/completions" in captured.out
+        called_url = mock_post.call_args.args[0]
+        assert called_url.endswith("/chat/completions")
+        assert "/models" not in called_url
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.post")
+    def test_config_smoke_json_output_returns_0(self, mock_post, mock_get_key, mock_config_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"choices": [{"message": {"content": "OK"}}]}
+        mock_post.return_value = mock_response
+
+        result = main(["config", "smoke", "--json"])
+        captured = capsys.readouterr()
+
+        assert result == 0
+        payload = json.loads(captured.out)
+        assert payload["status"] == "ok"
+        assert payload["endpoint"] == "/chat/completions"
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.post", side_effect=httpx.ConnectError("connection failed"))
+    def test_config_smoke_connect_error_returns_3(self, mock_post, mock_get_key, mock_config_cls, capsys):
+        mock_config = _make_mock_config()
+        mock_config_cls.return_value = mock_config
+
+        result = main(["config", "smoke"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert f"Cannot connect to API server at {mock_config.base_url}" in captured.err
+
+    @patch("askfind.cli.Config.from_file")
+    @patch("askfind.cli.get_api_key", return_value="sk-test")
+    @patch("httpx.post")
+    def test_config_smoke_missing_content_returns_3(self, mock_post, mock_get_key, mock_config_cls, capsys):
+        mock_config_cls.return_value = _make_mock_config()
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"choices": [{"message": {}}]}
+        mock_post.return_value = mock_response
+
+        result = main(["config", "smoke"])
+        captured = capsys.readouterr()
+
+        assert result == 3
+        assert "Error: ValueError" in captured.err
+
 
 class TestMainAdditionalBranches:
     @patch("askfind.interactive.session.InteractiveSession")

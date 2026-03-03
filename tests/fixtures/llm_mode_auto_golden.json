@@ -1,0 +1,71 @@
+[
+  {
+    "id": "auto_simple_python_src",
+    "query": "python files in src",
+    "fallback_filters": {
+      "ext": [".py"],
+      "path": "src",
+      "type": "file"
+    },
+    "expected_decision": "fallback",
+    "expected_reason": "auto_simple_fallback"
+  },
+  {
+    "id": "auto_empty_filters",
+    "query": "find files",
+    "fallback_filters": {},
+    "expected_decision": "llm",
+    "expected_reason": "auto_empty_fallback"
+  },
+  {
+    "id": "auto_ambiguous_related",
+    "query": "files related to authentication",
+    "fallback_filters": {
+      "ext": [".py"],
+      "type": "file"
+    },
+    "expected_decision": "llm",
+    "expected_reason": "auto_ambiguous_terms"
+  },
+  {
+    "id": "auto_ambiguous_korean_related",
+    "query": "인증 관련 파일 찾아줘",
+    "fallback_filters": {
+      "ext": [".py"],
+      "type": "file"
+    },
+    "expected_decision": "llm",
+    "expected_reason": "auto_ambiguous_terms"
+  },
+  {
+    "id": "auto_ambiguous_korean_which_file",
+    "query": "어떤 파일이 중요한지 알려줘",
+    "fallback_filters": {
+      "ext": [".py"],
+      "type": "file"
+    },
+    "expected_decision": "llm",
+    "expected_reason": "auto_ambiguous_terms"
+  },
+  {
+    "id": "auto_simple_korean_explicit",
+    "query": "src .py 파일",
+    "fallback_filters": {
+      "ext": [".py"],
+      "path": "src",
+      "type": "file"
+    },
+    "expected_decision": "fallback",
+    "expected_reason": "auto_simple_fallback"
+  },
+  {
+    "id": "auto_ambiguous_recommend",
+    "query": "recommend files about auth",
+    "fallback_filters": {
+      "ext": [".py"],
+      "type": "file"
+    },
+    "expected_decision": "llm",
+    "expected_reason": "auto_ambiguous_terms"
+  }
+]

@@ -67,6 +67,11 @@ askfind "files similar to auth.py" --root "$ROOT" --similarity-threshold 0.55 --
 askfind "files similar to auth.py" --root "$ROOT" --similarity-threshold 0.85 --no-rerank --no-cache
 ```
 
+7. LLM mode routing/cost smoke benchmark:
+```bash
+PYTHONPATH=src python scripts/bench/benchmark_llm_modes.py --root "$ROOT" --repeats 3 --output-json "/tmp/bench/${SAMPLE}_llm_modes.json" --output-csv "/tmp/bench/${SAMPLE}_llm_modes.csv"
+```
+
 ## Suggested Reporting Fields
 
 - `root`

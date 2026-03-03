@@ -151,13 +151,16 @@ askfind config set editor "code"
 
 # List available models from your provider
 askfind config models
+
+# Smoke-test provider compatibility without relying on /models
+askfind config smoke
 ```
 
 ## How It Works
 
 1. **Natural Language → Filters**:
    - Default mode sends your query to an LLM which extracts structured search filters (file extensions, paths, size constraints, modification times, content patterns, etc.).
-   - `--llm-mode auto` uses local fallback parsing for simple queries and calls the LLM only for ambiguous queries.
+   - `--llm-mode auto` uses local fallback parsing for simple queries and calls the LLM only for ambiguous queries (for example: `related to`, `which files`, `추천`, `관련 파일`).
    - `--llm-mode off` disables all LLM calls (same extraction behavior as heuristic mode).
    - `--offline` skips the LLM and directly applies heuristic query parsing for core filters (`ext`, `path`, `not_path`, `has`, `size`, `mod`).
    - If fallback parsing yields no meaningful filters in `--offline` mode, askfind exits with a non-zero status and a concise guidance message instead of running a broad search.
@@ -244,6 +247,7 @@ Config is stored in `~/.config/askfind/config.toml`:
 [provider]
 base_url = "https://openrouter.ai/api/v1"
 model = "openai/gpt-4o-mini"
+llm_mode = "always"
 
 [search]
 default_root = "."
@@ -340,6 +344,9 @@ PYTHONPATH=src python scripts/bench/benchmark_walk.py --root . --repeats 5 --wor
 
 # Compare baseline and candidate benchmark outputs
 python scripts/bench/compare_benchmark_results.py --baseline /tmp/bench-baseline.json --candidate /tmp/bench-candidate.json --metric median_s --ratio-threshold 1.35
+
+# Benchmark LLM routing behavior (always / auto / off)
+PYTHONPATH=src python scripts/bench/benchmark_llm_modes.py --root . --repeats 3 --output-json /tmp/askfind-llm-modes.json --output-csv /tmp/askfind-llm-modes.csv
 
 # CI-style performance regression check (parallel vs sequential median ratio)
 PYTHONPATH=src python scripts/ci/benchmark_regression_gate.py --root .

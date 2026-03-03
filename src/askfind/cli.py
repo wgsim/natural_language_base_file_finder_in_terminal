@@ -151,6 +151,24 @@ def _build_config_parser() -> argparse.ArgumentParser:
     models_parser = subparsers.add_parser("models", help="List available models")
     models_parser.add_argument("--provider", help="Filter by provider")
 
+    smoke_parser = subparsers.add_parser(
+        "smoke",
+        help="Smoke-test provider chat/completions compatibility",
+    )
+    smoke_parser.add_argument("--model", help="Override model for smoke request")
+    smoke_parser.add_argument(
+        "--prompt",
+        default="Return exactly: OK",
+        help="Prompt used for smoke request",
+    )
+    smoke_parser.add_argument(
+        "--timeout",
+        type=float,
+        default=15.0,
+        help="HTTP timeout seconds (default: 15.0)",
+    )
+    smoke_parser.add_argument("--json", action="store_true", dest="json_output")
+
     return parser
 
 
@@ -525,6 +543,74 @@ def _handle_config(args: argparse.Namespace) -> int:
             print(f"Error: {type(e).__name__}", file=sys.stderr)
             return 3
         return 0
+    if args.config_action == "smoke":
+        api_key = get_api_key()
+        if not api_key:
+            print("Error: No API key configured.", file=sys.stderr)
+            return 2
+
+        timeout = args.timeout
+        if timeout <= 0:
+            print("Error: --timeout must be > 0.", file=sys.stderr)
+            return 2
+
+        model = args.model or config.model
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": args.prompt}],
+            "temperature": 0.0,
+        }
+
+        try:
+            resp = httpx.post(
+                f"{config.base_url}/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=payload,
+                timeout=timeout,
+            )
+            status_code = resp.status_code
+            resp.raise_for_status()
+            data = resp.json()
+
+            content = ""
+            choices = data.get("choices")
+            if isinstance(choices, list) and choices:
+                first = choices[0]
+                if isinstance(first, dict):
+                    message = first.get("message")
+                    if isinstance(message, dict):
+                        raw_content = message.get("content")
+                        if isinstance(raw_content, str):
+                            content = raw_content.strip()
+            if not content:
+                raise ValueError("missing choices[0].message.content")
+
+            summary = {
+                "status": "ok",
+                "endpoint": "/chat/completions",
+                "base_url": config.base_url,
+                "model": model,
+                "http_status": status_code,
+                "response_preview": content[:160],
+            }
+            if args.json_output:
+                print(json_module.dumps(summary, ensure_ascii=False, indent=2))
+            else:
+                print(
+                    "Smoke OK: endpoint=/chat/completions "
+                    f"model={model} http_status={status_code}"
+                )
+                print(f"Preview: {summary['response_preview']}")
+            return 0
+        except httpx.HTTPStatusError as e:
+            print(f"Error: API returned HTTP {e.response.status_code}", file=sys.stderr)
+            return 3
+        except httpx.RequestError:
+            print(f"Error: Cannot connect to API server at {config.base_url}", file=sys.stderr)
+            return 3
+        except (ValueError, TypeError, KeyError, RuntimeError) as e:
+            print(f"Error: {type(e).__name__}", file=sys.stderr)
+            return 3
     return 2
 
 

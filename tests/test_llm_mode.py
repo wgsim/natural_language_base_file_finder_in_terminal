@@ -1,7 +1,20 @@
 """Tests for LLM mode decision policy."""
 
+import json
+from pathlib import Path
+
+import pytest
+
 from askfind.llm.mode import decide_llm_usage, normalize_llm_mode
 from askfind.search.filters import SearchFilters
+
+_GOLDEN_CASES_PATH = Path(__file__).resolve().parent / "fixtures" / "llm_mode_auto_golden.json"
+
+
+def _load_auto_mode_golden_cases() -> list[dict[str, object]]:
+    payload = json.loads(_GOLDEN_CASES_PATH.read_text(encoding="utf-8"))
+    assert isinstance(payload, list)
+    return [case for case in payload if isinstance(case, dict)]
 
 
 def test_normalize_llm_mode_accepts_valid_values():
@@ -59,3 +72,20 @@ def test_decide_llm_usage_auto_uses_llm_for_ambiguous_query():
     assert decision.llm_called is True
     assert decision.reason == "auto_ambiguous_terms"
 
+
+@pytest.mark.parametrize(
+    "case",
+    _load_auto_mode_golden_cases(),
+    ids=lambda case: str(case.get("id", "unknown")),
+)
+def test_decide_llm_usage_auto_golden_cases(case: dict[str, object]):
+    fallback_payload = case.get("fallback_filters")
+    assert isinstance(fallback_payload, dict)
+    decision = decide_llm_usage(
+        query=str(case["query"]),
+        fallback_filters=SearchFilters(**fallback_payload),
+        llm_mode="auto",
+    )
+
+    assert decision.decision == case["expected_decision"]
+    assert decision.reason == case["expected_reason"]

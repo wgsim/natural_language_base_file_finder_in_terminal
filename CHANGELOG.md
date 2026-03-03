@@ -2,6 +2,30 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.19] - 2026-03-03
+
+### Added
+- Added `askfind config smoke` provider-compatibility command:
+  - sends a minimal `/chat/completions` request to validate OpenAI-compatible chat endpoint support.
+  - avoids `/models` dependency for providers that do not expose model-list endpoints.
+- Added LLM mode routing golden-set coverage:
+  - new fixture corpus `tests/fixtures/llm_mode_auto_golden.json`.
+  - new parameterized decision-policy assertions in `tests/test_llm_mode.py`.
+- Added LLM mode benchmark automation script:
+  - `scripts/bench/benchmark_llm_modes.py`
+  - measures latency/success/LLM-call rates across `always`, `auto`, `off`.
+  - supports JSON/CSV artifact output.
+- Added benchmark script tests:
+  - `tests/test_benchmark_llm_modes_script.py`.
+
+### Changed
+- Improved `--llm-mode auto` ambiguity detection with additional English and Korean phrase patterns.
+- Updated docs for:
+  - provider smoke testing
+  - LLM mode benchmark workflow integration
+  - release checklist optional LLM routing/cost baseline capture.
+- Updated package version metadata to `0.1.19`.
+
 ## [0.1.18] - 2026-03-02
 
 ### Added

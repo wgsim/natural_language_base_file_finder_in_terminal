@@ -23,6 +23,8 @@ Use this checklist before tagging and publishing a release.
 - [ ] Run CI-style regression gates with release threshold (`1.35x`):
   - `PYTHONPATH=src python scripts/ci/benchmark_regression_gate.py --root . --ratio-threshold 1.35`
   - `PYTHONPATH=src python scripts/ci/index_query_regression_gate.py --root . --ratio-threshold 1.35`
+- [ ] (Optional) Capture LLM mode routing/cost baseline:
+  - `PYTHONPATH=src python scripts/bench/benchmark_llm_modes.py --root . --repeats 3 --output-json /tmp/askfind-llm-modes.json --output-csv /tmp/askfind-llm-modes.csv`
 - [ ] Confirm gate expectations in output:
   - pass condition is `ratio <= threshold` (gate fails only when `ratio > threshold`)
   - default scenarios are `all-files` and `python-files` when both are available (unless `--scenario` overrides)
