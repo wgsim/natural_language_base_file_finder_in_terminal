@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
+import subprocess  # nosec
 import sys
 
 from rich.console import Console
@@ -100,7 +100,7 @@ def open_in_editor(result: FileResult, editor: str = "vim") -> None:
         return
 
     try:
-        completed = subprocess.run([editor_path, str(result.path)], check=False)
+        completed = subprocess.run([editor_path, str(result.path)], check=False)  # nosec
         if completed.returncode != 0:
             console.print(f"[red]Editor exited with code {completed.returncode}[/red]")
     except (OSError, subprocess.SubprocessError) as e:
@@ -109,12 +109,12 @@ def open_in_editor(result: FileResult, editor: str = "vim") -> None:
 
 def _copy_to_clipboard(text: str) -> None:
     if sys.platform == "darwin":
-        subprocess.run(["pbcopy"], input=text.encode(), check=True)
+        subprocess.run(["pbcopy"], input=text.encode(), check=True)  # nosec
     elif sys.platform == "linux":
         try:
-            subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)
+            subprocess.run(["xclip", "-selection", "clipboard"], input=text.encode(), check=True)  # nosec
         except FileNotFoundError:
-            subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)
+            subprocess.run(["xsel", "--clipboard", "--input"], input=text.encode(), check=True)  # nosec
     else:
         # Windows
-        subprocess.run(["clip"], input=text.encode(), check=True)
+        subprocess.run(["clip"], input=text.encode(), check=True)  # nosec
