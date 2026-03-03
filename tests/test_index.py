@@ -379,6 +379,26 @@ def test_query_index_respects_max_results(tmp_path, monkeypatch):
     assert len(results) == 1
 
 
+def test_query_index_negative_max_results_behaves_as_unbounded(tmp_path, monkeypatch):
+    monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "a.py").write_text("print('a')\n")
+    (root / "b.py").write_text("print('b')\n")
+    opts = _options()
+    index.build_index(root=root, options=opts)
+
+    results = index.query_index(
+        root=root,
+        filters=index.SearchFilters(type="file", ext=[".py"]),
+        max_results=-1,
+        options=opts,
+    )
+
+    assert results is not None
+    assert len(results) == 2
+
+
 def test_query_index_root_resolve_failure_sets_fallback_reason(tmp_path, monkeypatch):
     monkeypatch.setattr(index, "INDEX_DIR", tmp_path / "indexes")
     root = tmp_path / "repo"

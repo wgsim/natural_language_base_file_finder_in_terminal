@@ -42,8 +42,11 @@ class Config:
     def from_file(cls, path: Path) -> Config:
         if not path.exists():
             return cls()
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
+        try:
+            with open(path, "rb") as f:
+                data = tomllib.load(f)
+        except (OSError, tomllib.TOMLDecodeError):
+            return cls()
         kwargs = {}
         provider = data.get("provider", {})
         search = data.get("search", {})
@@ -80,10 +83,15 @@ class Config:
         ):
             if bool_key in kwargs and not isinstance(kwargs[bool_key], bool):
                 kwargs.pop(bool_key)
-        for int_key in ("parallel_workers", "cache_ttl_seconds"):
+        for int_key in ("max_results", "parallel_workers", "cache_ttl_seconds"):
             if int_key in kwargs:
                 int_value = kwargs[int_key]
-                if not isinstance(int_value, int) or int_value < 1:
+                if (
+                    not isinstance(int_value, int)
+                    or isinstance(int_value, bool)
+                    or (int_key == "max_results" and int_value < 0)
+                    or (int_key != "max_results" and int_value < 1)
+                ):
                     kwargs.pop(int_key)
         if "llm_mode" in kwargs:
             llm_mode = kwargs["llm_mode"]

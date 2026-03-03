@@ -156,6 +156,19 @@ def test_compute_root_fingerprint_changes_after_top_level_mutation(tmp_path):
     assert before != after
 
 
+def test_compute_root_fingerprint_changes_after_nested_file_mutation(tmp_path):
+    nested = tmp_path / "a" / "b"
+    nested.mkdir(parents=True)
+    nested_file = nested / "code.py"
+    nested_file.write_text("x = 1\n")
+    before = compute_root_fingerprint(tmp_path)
+
+    nested_file.write_text("x = 12345\n")
+    after = compute_root_fingerprint(tmp_path)
+
+    assert before != after
+
+
 def test_cache_stats_track_hits_misses_and_sets(tmp_path):
     cache = SearchCache(cache_path=tmp_path / "cache.json", ttl_seconds=60, max_entries=16)
     file_a = tmp_path / "a.py"

@@ -566,6 +566,16 @@ class TestSearchFilters:
         nested_lookup = SearchFilters(similar="needle.py")
         assert nested_lookup._resolve_similar_reference_path(root=root) == nested.resolve()
 
+    def test_resolve_similar_reference_path_rejects_relative_escape_outside_root(self, tmp_path):
+        root = tmp_path / "root"
+        root.mkdir()
+        outside = tmp_path / "outside.py"
+        outside.write_text("print('outside')\n")
+
+        escaped = SearchFilters(similar="../outside.py")
+        assert escaped._resolve_similar_reference_path(root=root) is None
+        assert escaped._similar_resolved_failure is True
+
     def test_resolve_similar_reference_path_handles_rglob_oserror(self, tmp_path, monkeypatch):
         root = tmp_path / "root"
         root.mkdir()

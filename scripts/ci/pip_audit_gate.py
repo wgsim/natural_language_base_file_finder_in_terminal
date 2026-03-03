@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail CI only when pip-audit findings are high/critical severity."""
+"""Fail CI when pip-audit findings violate configured severity and resolution policy."""
 
 from __future__ import annotations
 
@@ -28,6 +28,11 @@ class Finding:
     vuln_id: str
     severity: str
     source_id: str
+    severity_resolved: bool = True
+
+
+class GateInputError(Exception):
+    """Raised when pip-audit report input cannot be read or parsed safely."""
 
 
 def _severity_from_score(score: str) -> str:
@@ -95,12 +100,24 @@ def _extract_record_severity(record: dict[str, Any]) -> str:
 
 
 def _load_findings(path: str, timeout: float) -> list[Finding]:
-    with open(path, encoding="utf-8") as f:
-        report = json.load(f)
+    try:
+        with open(path, encoding="utf-8") as f:
+            report = json.load(f)
+    except FileNotFoundError as exc:
+        raise GateInputError(f"input file not found: {path}") from exc
+    except json.JSONDecodeError as exc:
+        raise GateInputError(
+            f"invalid JSON in input file {path}: {exc.msg} at line {exc.lineno}, column {exc.colno}"
+        ) from exc
+    except OSError as exc:
+        raise GateInputError(f"unable to read input file {path}: {exc}") from exc
+
+    if not isinstance(report, dict):
+        raise GateInputError(f"invalid report format in {path}: expected top-level JSON object")
 
     dependencies = report.get("dependencies")
     if not isinstance(dependencies, list):
-        return []
+        raise GateInputError(f"invalid report format in {path}: 'dependencies' must be a list")
 
     findings: list[Finding] = []
     for dep in dependencies:
@@ -125,11 +142,14 @@ def _load_findings(path: str, timeout: float) -> list[Finding]:
 
             best_severity = "unknown"
             best_source_id = vuln_id
+            severity_resolved = False
             for candidate_id in alias_ids:
                 record = _fetch_osv_record(candidate_id, timeout=timeout)
                 if record is None:
                     continue
                 candidate_severity = _extract_record_severity(record)
+                if candidate_severity != "unknown":
+                    severity_resolved = True
                 if SEVERITY_ORDER[candidate_severity] > SEVERITY_ORDER[best_severity]:
                     best_severity = candidate_severity
                     best_source_id = candidate_id
@@ -141,6 +161,7 @@ def _load_findings(path: str, timeout: float) -> list[Finding]:
                     vuln_id=vuln_id,
                     severity=best_severity,
                     source_id=best_source_id,
+                    severity_resolved=severity_resolved,
                 )
             )
 
@@ -152,9 +173,17 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--input", default="pip-audit.json", help="Path to pip-audit JSON output")
     parser.add_argument(
         "--min-severity",
-        choices=("high", "critical"),
+        choices=("medium", "high", "critical"),
         default="high",
         help="Minimum severity level that fails CI",
+    )
+    parser.add_argument(
+        "--allow-unresolved-severity",
+        action="store_true",
+        help=(
+            "Allow unresolved OSV severity values (legacy behavior). "
+            "By default unresolved severity fails closed."
+        ),
     )
     parser.add_argument(
         "--timeout",
@@ -169,19 +198,35 @@ def main() -> int:
     args = _parse_args()
     min_level = SEVERITY_ORDER[args.min_severity]
 
-    findings = _load_findings(args.input, timeout=args.timeout)
+    try:
+        findings = _load_findings(args.input, timeout=args.timeout)
+    except GateInputError as exc:
+        print(f"pip-audit severity gate input error: {exc}", file=sys.stderr)
+        return 2
+
     if not findings:
         print("pip-audit severity gate: no vulnerabilities found")
         return 0
 
+    unresolved_findings = [f for f in findings if not f.severity_resolved]
     fail_findings = [f for f in findings if SEVERITY_ORDER[f.severity] >= min_level]
 
     print("pip-audit severity gate summary:")
     for finding in findings:
+        resolution = "resolved" if finding.severity_resolved else "unresolved"
         print(
             f"- {finding.package}=={finding.version}: {finding.vuln_id} "
-            f"(severity={finding.severity}, source={finding.source_id})"
+            f"(severity={finding.severity}, source={finding.source_id}, osv={resolution})"
         )
+
+    if unresolved_findings and not args.allow_unresolved_severity:
+        print(
+            "pip-audit severity gate failed: unresolved OSV severity for "
+            f"{len(unresolved_findings)} vulnerabilities; rerun with "
+            "--allow-unresolved-severity to opt out",
+            file=sys.stderr,
+        )
+        return 1
 
     if fail_findings:
         print(

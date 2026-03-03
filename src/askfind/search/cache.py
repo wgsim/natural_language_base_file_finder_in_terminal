@@ -75,20 +75,35 @@ def compute_root_fingerprint(root: Path) -> str:
     digest.update(f":{root_stat.st_dev}:{root_stat.st_ino}:{root_stat.st_mtime_ns}".encode("utf-8"))
 
     entries: list[tuple[str, int, int, int]] = []
-    try:
-        with os.scandir(root) as scanned:
-            for entry in scanned:
-                try:
-                    stat = entry.stat(follow_symlinks=False)
-                    is_dir = 1 if entry.is_dir(follow_symlinks=False) else 0
-                except OSError:
-                    continue
-                entries.append((entry.name, is_dir, stat.st_mtime_ns, stat.st_size))
-    except OSError:
-        return digest.hexdigest()
+    pending_dirs: list[tuple[Path, str]] = [(root, "")]
 
-    entries.sort(key=lambda item: item[0])
-    for name, is_dir, mtime_ns, size in entries[:ROOT_FINGERPRINT_SAMPLE_LIMIT]:
+    while pending_dirs and len(entries) < ROOT_FINGERPRINT_SAMPLE_LIMIT:
+        current_dir, rel_prefix = pending_dirs.pop(0)
+        try:
+            with os.scandir(current_dir) as scanned:
+                scanned_entries: list[tuple[str, int, int, int, Path]] = []
+                for entry in scanned:
+                    rel_name = f"{rel_prefix}/{entry.name}" if rel_prefix else entry.name
+                    try:
+                        stat = entry.stat(follow_symlinks=False)
+                        is_dir = 1 if entry.is_dir(follow_symlinks=False) else 0
+                    except OSError:
+                        continue
+                    scanned_entries.append(
+                        (rel_name, is_dir, stat.st_mtime_ns, stat.st_size, Path(entry.path))
+                    )
+        except OSError:
+            continue
+
+        scanned_entries.sort(key=lambda item: item[0])
+        for rel_name, is_dir, mtime_ns, size, entry_path in scanned_entries:
+            entries.append((rel_name, is_dir, mtime_ns, size))
+            if len(entries) >= ROOT_FINGERPRINT_SAMPLE_LIMIT:
+                break
+            if is_dir:
+                pending_dirs.append((entry_path, rel_name))
+
+    for name, is_dir, mtime_ns, size in entries:
         digest.update(name.encode("utf-8", errors="ignore"))
         digest.update(f":{is_dir}:{mtime_ns}:{size}".encode("utf-8"))
     return digest.hexdigest()

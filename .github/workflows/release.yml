@@ -12,6 +12,7 @@ jobs:
     permissions:
       contents: read
     steps:
+      # TODO(security): Pin third-party actions to commit SHAs.
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -21,10 +22,38 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Build distribution artifacts
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install build twine
+          python -m pip install -r requirements.txt
+          python -m pip install -e . pytest==9.0.2 pytest-cov==7.0.0 ruff==0.6.9 pip-audit==2.10.0 mypy==1.11.2 build twine
+
+      - name: Lint
+        run: ruff check src tests scripts
+
+      - name: Type check
+        run: python -m mypy src
+
+      - name: Run tests
+        run: PYTHONPATH=src pytest -q --cov=src/askfind --cov-fail-under=95
+
+      - name: Security audit
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/pip-audit-cache"
+          set +e
+          pip-audit -r requirements.txt -f json --aliases on --desc off \
+            --cache-dir "$RUNNER_TEMP/pip-audit-cache" > pip-audit.json
+          audit_exit=$?
+          set -e
+          if [ "$audit_exit" -ne 0 ] && [ "$audit_exit" -ne 1 ]; then
+            echo "pip-audit failed with unexpected exit code: $audit_exit" >&2
+            exit "$audit_exit"
+          fi
+          python scripts/ci/pip_audit_gate.py --input pip-audit.json --min-severity medium
+
+      - name: Build distribution artifacts
+        run: |
           python -m build
           python -m twine check dist/*
 

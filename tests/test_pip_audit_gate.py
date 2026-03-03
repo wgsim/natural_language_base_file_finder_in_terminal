@@ -114,12 +114,14 @@ def test_load_findings_uses_aliases_and_selects_best_severity(monkeypatch, tmp_p
     assert first.vuln_id == "PYSEC-1"
     assert first.severity == "critical"
     assert first.source_id == "GHSA-zzzz-1111"
+    assert first.severity_resolved is True
 
     second = findings[1]
     assert second.package == "beta"
     assert second.vuln_id == "PYSEC-2"
     assert second.severity == "unknown"
     assert second.source_id == "PYSEC-2"
+    assert second.severity_resolved is False
 
     assert calls == [
         ("PYSEC-1", 3.5),
@@ -129,7 +131,7 @@ def test_load_findings_uses_aliases_and_selects_best_severity(monkeypatch, tmp_p
     ]
 
 
-def test_load_findings_returns_empty_when_dependencies_not_list(monkeypatch, tmp_path):
+def test_load_findings_raises_for_invalid_report_shape(monkeypatch, tmp_path):
     report_path = tmp_path / "pip-audit.json"
     report_path.write_text(json.dumps({"dependencies": {}}), encoding="utf-8")
 
@@ -138,11 +140,17 @@ def test_load_findings_returns_empty_when_dependencies_not_list(monkeypatch, tmp
 
     monkeypatch.setattr(GATE, "_fetch_osv_record", fail_fetch)
 
-    assert GATE._load_findings(str(report_path), timeout=1.0) == []
+    with pytest.raises(GATE.GateInputError, match="'dependencies' must be a list"):
+        GATE._load_findings(str(report_path), timeout=1.0)
 
 
 def test_main_returns_failure_when_min_severity_is_met(monkeypatch, capsys):
-    args = Namespace(input="ignored.json", min_severity="high", timeout=2.0)
+    args = Namespace(
+        input="ignored.json",
+        min_severity="high",
+        timeout=2.0,
+        allow_unresolved_severity=False,
+    )
     monkeypatch.setattr(GATE, "_parse_args", lambda: args)
     monkeypatch.setattr(
         GATE,
@@ -173,7 +181,12 @@ def test_main_returns_failure_when_min_severity_is_met(monkeypatch, capsys):
 
 
 def test_main_returns_success_when_no_finding_reaches_threshold(monkeypatch, capsys):
-    args = Namespace(input="ignored.json", min_severity="critical", timeout=2.0)
+    args = Namespace(
+        input="ignored.json",
+        min_severity="critical",
+        timeout=2.0,
+        allow_unresolved_severity=False,
+    )
     monkeypatch.setattr(GATE, "_parse_args", lambda: args)
     monkeypatch.setattr(
         GATE,
@@ -197,7 +210,12 @@ def test_main_returns_success_when_no_finding_reaches_threshold(monkeypatch, cap
 
 
 def test_main_returns_success_when_no_findings(monkeypatch, capsys):
-    args = Namespace(input="ignored.json", min_severity="high", timeout=2.0)
+    args = Namespace(
+        input="ignored.json",
+        min_severity="high",
+        timeout=2.0,
+        allow_unresolved_severity=False,
+    )
     monkeypatch.setattr(GATE, "_parse_args", lambda: args)
     monkeypatch.setattr(GATE, "_load_findings", lambda *_args, **_kwargs: [])
 
@@ -205,3 +223,96 @@ def test_main_returns_success_when_no_findings(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert "pip-audit severity gate: no vulnerabilities found" in captured.out
     assert captured.err == ""
+
+
+def test_main_returns_failure_when_unresolved_and_fail_closed(monkeypatch, capsys):
+    args = Namespace(
+        input="ignored.json",
+        min_severity="high",
+        timeout=2.0,
+        allow_unresolved_severity=False,
+    )
+    monkeypatch.setattr(GATE, "_parse_args", lambda: args)
+    monkeypatch.setattr(
+        GATE,
+        "_load_findings",
+        lambda *_args, **_kwargs: [
+            GATE.Finding(
+                package="alpha",
+                version="1.0.0",
+                vuln_id="PYSEC-1",
+                severity="unknown",
+                source_id="PYSEC-1",
+                severity_resolved=False,
+            )
+        ],
+    )
+
+    assert GATE.main() == 1
+    captured = capsys.readouterr()
+    assert "pip-audit severity gate summary:" in captured.out
+    assert "osv=unresolved" in captured.out
+    assert "unresolved OSV severity for 1 vulnerabilities" in captured.err
+
+
+def test_main_allows_unresolved_when_opt_out_flag_is_set(monkeypatch, capsys):
+    args = Namespace(
+        input="ignored.json",
+        min_severity="high",
+        timeout=2.0,
+        allow_unresolved_severity=True,
+    )
+    monkeypatch.setattr(GATE, "_parse_args", lambda: args)
+    monkeypatch.setattr(
+        GATE,
+        "_load_findings",
+        lambda *_args, **_kwargs: [
+            GATE.Finding(
+                package="alpha",
+                version="1.0.0",
+                vuln_id="PYSEC-1",
+                severity="unknown",
+                source_id="PYSEC-1",
+                severity_resolved=False,
+            )
+        ],
+    )
+
+    assert GATE.main() == 0
+    captured = capsys.readouterr()
+    assert "pip-audit severity gate summary:" in captured.out
+    assert "pip-audit severity gate passed: no high+ vulnerabilities" in captured.out
+    assert captured.err == ""
+
+
+def test_main_returns_input_error_for_missing_report_file(monkeypatch, capsys, tmp_path):
+    missing_path = tmp_path / "missing-pip-audit.json"
+    args = Namespace(
+        input=str(missing_path),
+        min_severity="high",
+        timeout=2.0,
+        allow_unresolved_severity=False,
+    )
+    monkeypatch.setattr(GATE, "_parse_args", lambda: args)
+
+    assert GATE.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert f"input file not found: {missing_path}" in captured.err
+
+
+def test_main_returns_input_error_for_invalid_json(monkeypatch, capsys, tmp_path):
+    report_path = tmp_path / "pip-audit.json"
+    report_path.write_text("{ not-json }", encoding="utf-8")
+    args = Namespace(
+        input=str(report_path),
+        min_severity="high",
+        timeout=2.0,
+        allow_unresolved_severity=False,
+    )
+    monkeypatch.setattr(GATE, "_parse_args", lambda: args)
+
+    assert GATE.main() == 2
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "invalid JSON in input file" in captured.err
