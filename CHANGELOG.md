@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.20] - 2026-03-03
+
+### Added
+- Added controlled LLM response schema error handling in the HTTP client:
+  - new `LLMResponseSchemaError` for malformed/empty `/chat/completions` payloads.
+  - schema validation now applies to both filter extraction and semantic reranking paths.
+
+### Changed
+- Hardened CLI/config validation and runtime safety behavior:
+  - `--max` now rejects negative values with a clear CLI error.
+  - `askfind config set max_results` now rejects negative values.
+  - invalid configured `max_results` values now fall back to safe defaults.
+  - debug logging now avoids raw query text and raw LLM payload output.
+- Hardened config loading:
+  - malformed TOML and config I/O errors now fail closed to default config values.
+- Improved cache/index correctness:
+  - root fingerprint now captures nested tree mutations more reliably.
+  - index query treats negative `max_results` as unbounded, matching expected semantics.
+- Updated package version metadata to `0.1.20`.
+
 ## [0.1.19] - 2026-03-03
 
 ### Added
