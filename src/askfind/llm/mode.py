@@ -21,7 +21,17 @@ _AMBIGUOUS_QUERY_PATTERNS = (
     re.compile(r"\bsimilar to\b", re.IGNORECASE),
     re.compile(r"\babout\b", re.IGNORECASE),
     re.compile(r"\bimportant\b", re.IGNORECASE),
+    re.compile(r"\bbest\b", re.IGNORECASE),
+    re.compile(r"\brecommend(?:ed)?\b", re.IGNORECASE),
+    re.compile(r"\bwhich files?\b", re.IGNORECASE),
+    re.compile(r"\bwhere (?:is|are)\b", re.IGNORECASE),
     re.compile(r"\bwhat(?:'s| is)\b", re.IGNORECASE),
+    re.compile(r"관련(?:된)?"),
+    re.compile(r"비슷(?:한)?"),
+    re.compile(r"중요(?:한)?"),
+    re.compile(r"어떤\s*파일"),
+    re.compile(r"무슨\s*파일"),
+    re.compile(r"추천"),
 )
 
 
@@ -65,4 +75,3 @@ def decide_llm_usage(
             return QueryLLMDecision(mode=llm_mode, decision="llm", reason="auto_ambiguous_terms")
 
     return QueryLLMDecision(mode=llm_mode, decision="fallback", reason="auto_simple_fallback")
-

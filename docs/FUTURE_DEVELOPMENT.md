@@ -4,7 +4,8 @@
 
 ## Version History
 
-- **v0.1.18** (Current) - interactive offline parity + offline CI smoke + parser and regression-gate hardening
+- **v0.1.19** (Current) - LLM auto-mode routing hardening, provider smoke command, and mode benchmark automation
+- **v0.1.18** - interactive offline parity + offline CI smoke + parser and regression-gate hardening
 - **v0.1.17** - explicit offline mode + fallback parsing precision improvements + offline E2E coverage
 - **v0.1.16** - release checklist + optional CI benchmark compare job + synthesized dataset generator script
 - **v0.1.15** - benchmark artifact output/compare automation and measured 4-sample baseline capture
