@@ -17,6 +17,7 @@ Find files using plain English queries instead of complex shell commands. askfin
 - 🗂️ **Index Management** - Build/update/status/clear optional per-root file indexes
 - 🧠 **LLM Filter Memoization** - Reuses repeated filter-extraction calls (in-memory + disk cache)
 - 🛟 **LLM Outage Fallback** - If filter extraction fails, askfind falls back to heuristic query parsing for core filters
+- 🧱 **Validation Guards** - Rejects invalid numeric limits and handles malformed LLM responses with controlled error paths
 - 🔌 **Explicit Offline Mode** - `--offline` skips API key/LLM and uses local heuristic parsing directly
 - 💻 **Interactive Mode** - REPL with action commands in tmux/zellij panes
 - 🔐 **Secure Secrets** - Keychain-first API key storage (macOS Keychain, Linux Secret Service, Windows Credential Manager)
@@ -139,7 +140,7 @@ askfind config show
 # Set configuration values
 askfind config set model "gpt-4o"
 askfind config set llm_mode "auto"   # always | auto | off
-askfind config set max_results 100
+askfind config set max_results 100    # must be >= 0
 askfind config set parallel_workers 1
 askfind config set cache_enabled true
 askfind config set cache_ttl_seconds 300
@@ -164,6 +165,7 @@ askfind config smoke
    - `--llm-mode off` disables all LLM calls (same extraction behavior as heuristic mode).
    - `--offline` skips the LLM and directly applies heuristic query parsing for core filters (`ext`, `path`, `not_path`, `has`, `size`, `mod`).
    - If fallback parsing yields no meaningful filters in `--offline` mode, askfind exits with a non-zero status and a concise guidance message instead of running a broad search.
+   - Invalid or empty LLM chat payloads are treated as controlled schema errors; askfind falls back to heuristic filters when possible.
 
 2. **Optimized Search**: Filters are applied in cheapest-first order:
    - Tier 0 (no I/O): type, depth, extension, name patterns
@@ -181,6 +183,12 @@ askfind config smoke
 4. **Optional Index Management**: Use `askfind index` commands to precompute and manage
    per-root file path indexes for large repositories. When present and fresh, search
    execution attempts index query first, then falls back to live traversal if needed.
+
+## Safety Notes
+
+- `--max` and `config set max_results` reject negative values.
+- Debug logging redacts raw query text, raw LLM response payloads, and API key values.
+- LLM response shape is validated before parsing filters or re-ranking.
 
 ## Filter Schema
 
