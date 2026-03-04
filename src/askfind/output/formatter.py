@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 
@@ -20,7 +20,7 @@ class FileResult:
         return cls(
             path=path,
             size=stat.st_size,
-            modified=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc),
+            modified=datetime.fromtimestamp(stat.st_mtime, tz=UTC),
         )
 
 
