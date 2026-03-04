@@ -6,22 +6,22 @@ import argparse
 import ipaddress
 import json as json_module
 import sys
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from dataclasses import dataclass, field, fields
 
 from askfind.config import Config, get_api_key, get_config_path, set_api_key
 from askfind.llm.client import LLMClient
 from askfind.llm.fallback import has_meaningful_filters, parse_query_fallback
 from askfind.llm.mode import DEFAULT_LLM_MODE, LLMMode, decide_llm_usage, normalize_llm_mode
 from askfind.llm.parser import parse_llm_response
-from askfind.logging_config import setup_logging, get_logger
+from askfind.logging_config import get_logger, setup_logging
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
 from askfind.search.index import (
-    IndexQueryDiagnostics,
     IndexOptions,
+    IndexQueryDiagnostics,
     build_index,
     clear_index,
     get_index_status,
@@ -44,7 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("query", nargs="?", help="Natural language query or 'config' subcommand")
     parser.add_argument("-i", "--interactive", action="store_true", help="Launch interactive mode")
     parser.add_argument("-r", "--root", default=".", help="Search root directory")
-    parser.add_argument("-m", "--max", type=int, default=0, dest="max_results", help="Max results (0=use config)")
+    parser.add_argument(
+        "-m", "--max", type=int, default=0, dest="max_results", help="Max results (0=use config)"
+    )
     parser.add_argument("--workers", type=int, default=0, help="Traversal workers (0=use config)")
     parser.add_argument("-v", "--verbose", action="store_true", help="Show file metadata")
     parser.add_argument("--json", action="store_true", dest="json_output", help="JSON output")
@@ -60,9 +62,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--llm-mode",
         choices=("always", "auto", "off"),
         default=None,
-        help="LLM call policy: always (default), auto (simple queries skip LLM), off (never call LLM)",
+        help="LLM policy: always (default), auto (skip for simple), off (never call LLM)",
     )
-    parser.add_argument("--no-cache", action="store_true", help="Disable search cache for this command")
+    parser.add_argument(
+        "--no-cache", action="store_true", help="Disable search cache for this command"
+    )
     parser.add_argument(
         "--cache-stats",
         action="store_true",
@@ -114,18 +118,24 @@ def _validate_base_url(url: str) -> tuple[bool, str]:
         if parsed.scheme not in ("https", "http"):
             return False, "URL must use http:// or https:// scheme"
 
-        if parsed.scheme == "http":
-            # Only allow HTTP for localhost/127.0.0.1
-            if parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
-                return False, "HTTP is only allowed for localhost. Use HTTPS for remote servers."
+        # Only allow HTTP for localhost/127.0.0.1
+        if parsed.scheme == "http" and parsed.hostname not in (
+            "localhost",
+            "127.0.0.1",
+            "::1",
+        ):
+            return False, "HTTP is only allowed for localhost. Use HTTPS for remote servers."
 
         # Block RFC 1918 private addresses and link-local
         if parsed.hostname:
             try:
                 ip = ipaddress.ip_address(parsed.hostname)
-                if ip.is_private or ip.is_link_local or ip.is_loopback:
-                    if parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
-                        return False, f"Private/internal IP addresses are not allowed: {parsed.hostname}"
+                if (
+                    ip.is_private or ip.is_link_local or ip.is_loopback
+                ) and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+                    return False, (
+                        f"Private/internal IP addresses are not allowed: {parsed.hostname}"
+                    )
             except ValueError:
                 # Not an IP address, it's a hostname - that's fine
                 pass
@@ -286,7 +296,9 @@ class _IndexQueryRuntimeStats:
     def record_fallback(self, reason: str | None) -> None:
         self.fallbacks += 1
         normalized_reason = reason or "unknown"
-        self.fallback_reasons[normalized_reason] = self.fallback_reasons.get(normalized_reason, 0) + 1
+        self.fallback_reasons[normalized_reason] = (
+            self.fallback_reasons.get(normalized_reason, 0) + 1
+        )
 
 
 @dataclass
@@ -770,7 +782,10 @@ def main(argv: list[str] | None = None) -> int:
     # Validate query length
     MAX_QUERY_LENGTH = 1000
     if len(args.query) > MAX_QUERY_LENGTH:
-        print(f"Error: Query exceeds maximum length of {MAX_QUERY_LENGTH} characters.", file=sys.stderr)
+        print(
+            f"Error: Query exceeds maximum length of {MAX_QUERY_LENGTH} characters.",
+            file=sys.stderr,
+        )
         return 2
 
     fallback_filters = parse_query_fallback(args.query)
@@ -885,11 +900,20 @@ def main(argv: list[str] | None = None) -> int:
             if not use_llm:
                 if not has_meaningful_filters(fallback_filters):
                     if args.offline:
-                        message = "Error: --offline query is too broad; add at least one concrete filter."
+                        message = (
+                            "Error: --offline query is too broad; "
+                            "add at least one concrete filter."
+                        )
                     elif llm_mode == "off":
-                        message = "Error: --llm-mode off query is too broad; add at least one concrete filter."
+                        message = (
+                            "Error: --llm-mode off query is too broad; "
+                            "add at least one concrete filter."
+                        )
                     else:
-                        message = "Error: Query is too broad for heuristic mode; use --llm-mode always."
+                        message = (
+                            "Error: Query is too broad for heuristic mode; "
+                            "use --llm-mode always."
+                        )
                     print(message, file=sys.stderr)
                     if args.cache_stats:
                         _emit_cache_stats(cache)
@@ -919,8 +943,11 @@ def main(argv: list[str] | None = None) -> int:
                         filters = parse_llm_response(raw_response)
                         if not isinstance(filters, SearchFilters):
                             filters = SearchFilters()
-                        if isinstance(filters, SearchFilters) and not has_meaningful_filters(filters):
-                            if has_meaningful_filters(fallback_filters):
+                        if (
+                            isinstance(filters, SearchFilters)
+                            and not has_meaningful_filters(filters)
+                            and has_meaningful_filters(fallback_filters)
+                        ):
                                 filters = fallback_filters
                                 fallback_used = True
                                 fallback_reason = "empty_llm_filters"
@@ -1001,10 +1028,16 @@ def main(argv: list[str] | None = None) -> int:
         print("Error: Permission denied accessing search root", file=sys.stderr)
         return 3
     except httpx.HTTPStatusError as e:
-        print(f"Error: API request failed (HTTP {e.response.status_code})", file=sys.stderr)
+        print(
+            f"Error: API request failed (HTTP {e.response.status_code})",
+            file=sys.stderr,
+        )
         return 3
     except httpx.RequestError:
-        print("Error: Cannot connect to API server. Check your network and base_url config.", file=sys.stderr)
+        print(
+            "Error: Cannot connect to API server. Check your network and base_url config.",
+            file=sys.stderr,
+        )
         return 3
     except json_module.JSONDecodeError:
         print("Error: Invalid response from LLM API", file=sys.stderr)

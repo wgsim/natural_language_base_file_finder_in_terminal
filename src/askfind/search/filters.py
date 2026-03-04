@@ -7,7 +7,7 @@ import os
 import plistlib
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -142,9 +142,9 @@ def parse_mod_datetime(s: str, *, upper_bound: bool = False) -> datetime:
 
     dt = datetime.fromisoformat(raw)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     else:
-        dt = dt.astimezone(timezone.utc)
+        dt = dt.astimezone(UTC)
 
     # Date-only values represent whole-day boundaries.
     if len(s.strip()) == 10:
@@ -607,7 +607,7 @@ class SearchFilters:
         def get_mtime() -> datetime:
             nonlocal mtime
             if mtime is None:
-                mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+                mtime = datetime.fromtimestamp(stat.st_mtime, tz=UTC)
             return mtime
 
         if self.size:
@@ -628,7 +628,7 @@ class SearchFilters:
             except (ValueError, OverflowError):
                 delta = None
             if delta is not None:
-                cutoff = datetime.now(timezone.utc) - delta
+                cutoff = datetime.now(UTC) - delta
                 if op == ">" and get_mtime() < cutoff:
                     return False
                 if op == "<" and get_mtime() > cutoff:
