@@ -49,8 +49,13 @@ class QueryLLMDecision:
 def normalize_llm_mode(value: object, *, default: LLMMode = DEFAULT_LLM_MODE) -> LLMMode:
     if isinstance(value, str):
         normalized = value.strip().lower()
-        if normalized in VALID_LLM_MODES:
-            return normalized  # type: ignore[return-value]
+        # Explicit check against each valid mode for proper type narrowing
+        if normalized == "always":
+            return "always"
+        if normalized == "auto":
+            return "auto"
+        if normalized == "off":
+            return "off"
     return default
 
 

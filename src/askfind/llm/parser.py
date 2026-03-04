@@ -7,9 +7,14 @@ import re
 from dataclasses import fields
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any
+from typing import TypeAlias
 
 from askfind.search.filters import SearchFilters, parse_mod_datetime, parse_size, parse_time_delta
+
+# Type aliases for JSON values from LLM responses
+JSONPrimitive: TypeAlias = str | int | float | bool | None
+JSONValue: TypeAlias = JSONPrimitive | list['JSONValue'] | dict[str, 'JSONValue']
+JSONDict: TypeAlias = dict[str, JSONValue]
 
 _LIST_FIELDS = {"ext", "not_ext", "has", "tag", "lang", "not_lang", "license", "not_license"}
 _MAX_LIST_LENGTH = 20  # Maximum items in list fields
@@ -101,7 +106,7 @@ def _validate_mod_absolute_value(value: str) -> str | None:
     return parsed.isoformat(timespec="seconds")
 
 
-def _sanitize_relative_path_reference(value: Any) -> str | None:
+def _sanitize_relative_path_reference(value: JSONValue) -> str | None:
     if not isinstance(value, str):
         return None
     normalized = value.strip()[:_MAX_TERM_LENGTH]
@@ -116,7 +121,13 @@ def _sanitize_relative_path_reference(value: Any) -> str | None:
     return path.as_posix()
 
 
-def _validate_and_sanitize_value(key: str, value: Any) -> Any | None:
+# Validated value types that can be assigned to SearchFilters fields
+ValidatedValue: TypeAlias = (
+    str | list[str]  # Most fields are string or list of strings
+)
+
+
+def _validate_and_sanitize_value(key: str, value: JSONValue) -> ValidatedValue | None:
     """Validate and sanitize field values from LLM response.
 
     Returns sanitized value or None if invalid.
