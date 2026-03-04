@@ -13,6 +13,7 @@ import httpx
 from dataclasses import dataclass, field, fields
 
 from askfind.config import Config, get_api_key, get_config_path, set_api_key
+from askfind.config_reader import ConfigReader, RuntimeConfig
 from askfind.llm.client import LLMClient
 from askfind.llm.fallback import has_meaningful_filters, parse_query_fallback
 from askfind.llm.mode import DEFAULT_LLM_MODE, LLMMode, decide_llm_usage, normalize_llm_mode
@@ -31,7 +32,7 @@ from askfind.search.index import (
 
 logger = get_logger(__name__)
 from askfind.output.formatter import FileResult, format_json, format_plain, format_verbose
-from askfind.search.filters import DEFAULT_SIMILARITY_THRESHOLD, SearchFilters
+from askfind.search.filters import SearchFilters
 from askfind.search.walker import walk_and_filter
 
 
@@ -233,36 +234,6 @@ def _parse_bool(value: str) -> bool:
     raise ValueError("must be a boolean value (true/false)")
 
 
-def _read_bool_config(value: object, *, default: bool) -> bool:
-    if isinstance(value, bool):
-        return value
-    return default
-
-
-def _read_positive_int_config(value: object, *, default: int) -> int:
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 1:
-        return value
-    return default
-
-
-def _read_non_negative_int_config(value: object, *, default: int) -> int:
-    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-        return value
-    return default
-
-
-def _read_similarity_threshold_config(value: object, *, default: float) -> float:
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        normalized = float(value)
-        if 0.0 <= normalized <= 1.0:
-            return normalized
-    return default
-
-
-def _read_llm_mode_config(value: object, *, default: LLMMode) -> LLMMode:
-    return normalize_llm_mode(value, default=default)
-
-
 def _emit_cache_stats(cache: SearchCache | None) -> None:
     if cache is None:
         print("cache: disabled", file=sys.stderr)
@@ -340,6 +311,7 @@ def _emit_llm_mode_stats(*, mode: str, decision: str, reason: str) -> None:
 
 def _handle_index(args: argparse.Namespace, *, raw_argv: list[str]) -> int:
     config = Config.from_file(get_config_path())
+    reader = ConfigReader(config)
     root_value = args.root if _has_root_override(raw_argv) else config.default_root
     root_path = Path(root_value).resolve()
 
@@ -348,26 +320,11 @@ def _handle_index(args: argparse.Namespace, *, raw_argv: list[str]) -> int:
             if args.workers < 0:
                 print("Error: --workers must be >= 0.", file=sys.stderr)
                 return 2
-            configured_workers = _read_positive_int_config(
-                getattr(config, "parallel_workers", 1),
-                default=1,
-            )
+            configured_workers = reader.get_positive_int("parallel_workers", default=1)
             options = IndexOptions(
-                respect_ignore_files=_read_bool_config(
-                    getattr(config, "respect_ignore_files", True),
-                    default=True,
-                ) and not args.no_ignore,
-                follow_symlinks=_read_bool_config(
-                    getattr(config, "follow_symlinks", False),
-                    default=False,
-                ) or args.follow_symlinks,
-                exclude_binary_files=(
-                    _read_bool_config(
-                        getattr(config, "exclude_binary_files", True),
-                        default=True,
-                    )
-                    and not args.include_binary
-                ),
+                respect_ignore_files=reader.get_bool("respect_ignore_files", default=True) and not args.no_ignore,
+                follow_symlinks=reader.get_bool("follow_symlinks", default=False) or args.follow_symlinks,
+                exclude_binary_files=reader.get_bool("exclude_binary_files", default=True) and not args.include_binary,
                 search_archives=False,
                 traversal_workers=args.workers or configured_workers,
             )
@@ -656,80 +613,43 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     config = Config.from_file(get_config_path())
-    respect_ignore_files = _read_bool_config(
-        getattr(config, "respect_ignore_files", True),
-        default=True,
-    ) and not args.no_ignore
-    follow_symlinks = _read_bool_config(
-        getattr(config, "follow_symlinks", False),
-        default=False,
-    ) or args.follow_symlinks
-    exclude_binary_files = _read_bool_config(
-        getattr(config, "exclude_binary_files", True),
-        default=True,
-    )
-    search_archives = _read_bool_config(
-        getattr(config, "search_archives", False),
-        default=False,
-    ) or args.search_archives
-    cache_enabled = _read_bool_config(
-        getattr(config, "cache_enabled", True),
-        default=True,
-    ) and not args.no_cache
-    cache_ttl_seconds = _read_positive_int_config(
-        getattr(config, "cache_ttl_seconds", 300),
-        default=300,
-    )
+
+    # Validate CLI arguments
     if args.workers < 0:
         print("Error: --workers must be >= 0.", file=sys.stderr)
         return 2
     if args.max_results < 0:
         print("Error: --max must be >= 0.", file=sys.stderr)
         return 2
-    configured_workers = _read_positive_int_config(
-        getattr(config, "parallel_workers", 1),
-        default=1,
-    )
-    configured_max_results = _read_non_negative_int_config(
-        getattr(config, "max_results", 50),
-        default=50,
-    )
-    parallel_workers = args.workers or configured_workers
-    configured_similarity_threshold = _read_similarity_threshold_config(
-        getattr(config, "similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD),
-        default=DEFAULT_SIMILARITY_THRESHOLD,
-    )
-    similarity_threshold = configured_similarity_threshold
-    if args.similarity_threshold is not None:
-        if args.similarity_threshold < 0.0 or args.similarity_threshold > 1.0:
-            print("Error: --similarity-threshold must be between 0.0 and 1.0.", file=sys.stderr)
-            return 2
-        similarity_threshold = args.similarity_threshold
-    configured_llm_mode = _read_llm_mode_config(
-        getattr(config, "llm_mode", DEFAULT_LLM_MODE),
-        default=DEFAULT_LLM_MODE,
-    )
-    llm_mode = normalize_llm_mode(args.llm_mode, default=configured_llm_mode)
-    if args.offline:
-        llm_mode = "off"
-    if args.include_binary:
-        exclude_binary_files = False
+    if args.similarity_threshold is not None and (args.similarity_threshold < 0.0 or args.similarity_threshold > 1.0):
+        print("Error: --similarity-threshold must be between 0.0 and 1.0.", file=sys.stderr)
+        return 2
+
+    # Resolve root path
     root_value = args.root if _has_root_override(raw_argv) else config.default_root
     root_path = Path(root_value).resolve()
+
+    # Build runtime configuration from config + CLI args
+    runtime = RuntimeConfig.from_config(
+        config,
+        root=root_path,
+        no_ignore=args.no_ignore,
+        follow_symlinks=args.follow_symlinks,
+        include_binary=args.include_binary,
+        search_archives=args.search_archives,
+        workers=args.workers,
+        max_results=args.max_results,
+        similarity_threshold=args.similarity_threshold,
+        no_cache=args.no_cache,
+        llm_mode=args.llm_mode,
+        offline=args.offline,
+        model=args.model,
+    )
 
     # Handle --interactive-session (spawned pane)
     if args.interactive_session:
         from askfind.interactive.session import InteractiveSession
-        config.respect_ignore_files = respect_ignore_files
-        config.follow_symlinks = follow_symlinks
-        config.exclude_binary_files = exclude_binary_files
-        config.search_archives = search_archives
-        config.similarity_threshold = similarity_threshold
-        config.parallel_workers = parallel_workers
-        config.cache_enabled = cache_enabled
-        config.cache_ttl_seconds = cache_ttl_seconds
-        config.offline_mode = args.offline
-        config.llm_mode = llm_mode
+        runtime.apply_to_config(config)
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -741,16 +661,7 @@ def main(argv: list[str] | None = None) -> int:
             return 0  # Pane was spawned, exit this process
         # Fallback: run inline
         from askfind.interactive.session import InteractiveSession
-        config.respect_ignore_files = respect_ignore_files
-        config.follow_symlinks = follow_symlinks
-        config.exclude_binary_files = exclude_binary_files
-        config.search_archives = search_archives
-        config.similarity_threshold = similarity_threshold
-        config.parallel_workers = parallel_workers
-        config.cache_enabled = cache_enabled
-        config.cache_ttl_seconds = cache_ttl_seconds
-        config.offline_mode = args.offline
-        config.llm_mode = llm_mode
+        runtime.apply_to_config(config)
         session = InteractiveSession(config, root_path)
         session.run()
         return 0
@@ -764,9 +675,6 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr
         )
 
-    model = args.model or config.model
-    max_results = args.max_results or configured_max_results
-
     # Validate query length
     MAX_QUERY_LENGTH = 1000
     if len(args.query) > MAX_QUERY_LENGTH:
@@ -777,7 +685,7 @@ def main(argv: list[str] | None = None) -> int:
     llm_decision = decide_llm_usage(
         query=args.query,
         fallback_filters=fallback_filters,
-        llm_mode=llm_mode,
+        llm_mode=runtime.llm_mode,
     )
     use_llm = llm_decision.llm_called
 
@@ -788,34 +696,34 @@ def main(argv: list[str] | None = None) -> int:
             print("Error: No API key configured. Run `askfind config set-key`.", file=sys.stderr)
             return 2
 
-    cache = SearchCache(ttl_seconds=cache_ttl_seconds) if cache_enabled else None
+    cache = SearchCache(ttl_seconds=runtime.cache_ttl_seconds) if runtime.cache_enabled else None
     index_stats = _IndexQueryRuntimeStats()
     llm_fallback_stats = _LLMFallbackRuntimeStats()
     cache_key: str | None = None
     root_fingerprint: str | None = None
     if cache is not None:
-        cache_mode = f"{llm_mode}:{llm_decision.decision}"
+        cache_mode = f"{runtime.llm_mode}:{llm_decision.decision}"
         if use_llm:
-            cache_model = f"{model}::llm_mode={cache_mode}"
-            cache_base_url = config.base_url
+            cache_model = f"{runtime.model}::llm_mode={cache_mode}"
+            cache_base_url = runtime.base_url
         else:
             cache_model = f"__fallback__::llm_mode={cache_mode}"
             cache_base_url = "offline://fallback"
         cache_key = build_search_cache_key(
             query=args.query,
-            root=root_path,
+            root=runtime.root,
             model=cache_model,
             base_url=cache_base_url,
-            max_results=max_results,
+            max_results=runtime.max_results,
             no_rerank=args.no_rerank,
-            respect_ignore_files=respect_ignore_files,
-            follow_symlinks=follow_symlinks,
-            exclude_binary_files=exclude_binary_files,
-            search_archives=search_archives,
-            traversal_workers=parallel_workers,
-            similarity_threshold=similarity_threshold,
+            respect_ignore_files=runtime.respect_ignore_files,
+            follow_symlinks=runtime.follow_symlinks,
+            exclude_binary_files=runtime.exclude_binary_files,
+            search_archives=runtime.search_archives,
+            traversal_workers=runtime.parallel_workers,
+            similarity_threshold=runtime.similarity_threshold,
         )
-        root_fingerprint = compute_root_fingerprint(root_path)
+        root_fingerprint = compute_root_fingerprint(runtime.root)
 
     try:
         cached_paths: list[Path] | None = None
@@ -845,19 +753,13 @@ def main(argv: list[str] | None = None) -> int:
             fallback_reason: str | None = None
 
             def _run_search(parsed_filters: SearchFilters) -> list[FileResult]:
-                parsed_filters.similarity_threshold = similarity_threshold
-                index_options = IndexOptions(
-                    respect_ignore_files=respect_ignore_files,
-                    follow_symlinks=follow_symlinks,
-                    exclude_binary_files=exclude_binary_files,
-                    search_archives=search_archives,
-                    traversal_workers=parallel_workers,
-                )
+                parsed_filters.similarity_threshold = runtime.similarity_threshold
+                index_options = runtime.to_index_options()
                 index_diagnostics = IndexQueryDiagnostics()
                 indexed_paths = query_index(
-                    root=root_path,
+                    root=runtime.root,
                     filters=parsed_filters,
-                    max_results=max_results,
+                    max_results=runtime.max_results,
                     options=index_options,
                     diagnostics=index_diagnostics,
                 )
@@ -866,14 +768,14 @@ def main(argv: list[str] | None = None) -> int:
                     logger.debug("Index query miss/unusable; falling back to filesystem walk")
                     paths = list(
                         walk_and_filter(
-                            root_path,
+                            runtime.root,
                             parsed_filters,
-                            max_results=max_results,
-                            respect_ignore_files=respect_ignore_files,
-                            follow_symlinks=follow_symlinks,
-                            exclude_binary_files=exclude_binary_files,
-                            search_archives=search_archives,
-                            traversal_workers=parallel_workers,
+                            max_results=runtime.max_results,
+                            respect_ignore_files=runtime.respect_ignore_files,
+                            follow_symlinks=runtime.follow_symlinks,
+                            exclude_binary_files=runtime.exclude_binary_files,
+                            search_archives=runtime.search_archives,
+                            traversal_workers=runtime.parallel_workers,
                         )
                     )
                 else:
@@ -884,9 +786,9 @@ def main(argv: list[str] | None = None) -> int:
 
             if not use_llm:
                 if not has_meaningful_filters(fallback_filters):
-                    if args.offline:
+                    if runtime.offline_mode:
                         message = "Error: --offline query is too broad; add at least one concrete filter."
-                    elif llm_mode == "off":
+                    elif runtime.llm_mode == "off":
                         message = "Error: --llm-mode off query is too broad; add at least one concrete filter."
                     else:
                         message = "Error: Query is too broad for heuristic mode; use --llm-mode always."
@@ -896,14 +798,14 @@ def main(argv: list[str] | None = None) -> int:
                         _emit_index_stats(index_stats)
                         _emit_llm_fallback_stats(llm_fallback_stats)
                         _emit_llm_mode_stats(
-                            mode=llm_mode,
+                            mode=runtime.llm_mode,
                             decision=llm_decision.decision,
                             reason=llm_decision.reason,
                         )
                     return 2
                 logger.debug(
                     "Heuristic mode selected (mode=%s reason=%s); skipping LLM",
-                    llm_mode,
+                    runtime.llm_mode,
                     llm_decision.reason,
                 )
                 results = _run_search(fallback_filters)
@@ -911,7 +813,7 @@ def main(argv: list[str] | None = None) -> int:
                 logger.debug("Initializing LLM client")
                 if api_key is None:
                     raise RuntimeError("API key unexpectedly missing in online mode")
-                with LLMClient(base_url=config.base_url, api_key=api_key, model=model) as client:
+                with LLMClient(base_url=runtime.base_url, api_key=api_key, model=runtime.model) as client:
                     try:
                         logger.debug("Sending query to LLM")
                         raw_response = client.extract_filters(args.query)
@@ -969,7 +871,7 @@ def main(argv: list[str] | None = None) -> int:
                 _emit_index_stats(index_stats)
                 _emit_llm_fallback_stats(llm_fallback_stats)
                 _emit_llm_mode_stats(
-                    mode=llm_mode,
+                    mode=runtime.llm_mode,
                     decision=llm_decision.decision,
                     reason=llm_decision.reason,
                 )
@@ -986,7 +888,7 @@ def main(argv: list[str] | None = None) -> int:
             _emit_index_stats(index_stats)
             _emit_llm_fallback_stats(llm_fallback_stats)
             _emit_llm_mode_stats(
-                mode=llm_mode,
+                mode=runtime.llm_mode,
                 decision=llm_decision.decision,
                 reason=llm_decision.reason,
             )
