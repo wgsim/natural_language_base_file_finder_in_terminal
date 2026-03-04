@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import fields
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -92,7 +92,7 @@ def _validate_mod_absolute_value(value: str) -> str | None:
     except (ValueError, OverflowError):
         return None
 
-    max_year = datetime.now(timezone.utc).year + _MAX_FUTURE_YEARS
+    max_year = datetime.now(UTC).year + _MAX_FUTURE_YEARS
     if parsed.year < _MIN_MOD_YEAR or parsed.year > max_year:
         return None
 
