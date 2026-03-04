@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import shlex
-import subprocess
+import subprocess  # nosec B404 - subprocess is required for local pane management
 import sys
 from enum import Enum
 
@@ -35,7 +35,7 @@ def spawn_interactive_pane() -> bool:
 
     if mux == Multiplexer.TMUX:
         # tmux split-window expects a shell command string, so use shlex.join
-        subprocess.run(
+        subprocess.run(  # nosec B603,B607 - fixed argv list, no shell invocation
             ["tmux", "split-window", "-h", shlex.join(askfind_args)],
             check=True,
         )
@@ -43,7 +43,7 @@ def spawn_interactive_pane() -> bool:
 
     if mux == Multiplexer.ZELLIJ:
         # Zellij accepts proper argument list after --
-        subprocess.run(
+        subprocess.run(  # nosec B603,B607 - fixed argv list, no shell invocation
             ["zellij", "run", "--direction", "right", "--", *askfind_args],
             check=True,
         )
@@ -53,7 +53,7 @@ def spawn_interactive_pane() -> bool:
     if sys.platform == "darwin":
         # macOS Terminal.app - use AppleScript for proper handling
         script = f'tell application "Terminal" to do script "{shlex.join(askfind_args)}"'
-        subprocess.Popen(
+        subprocess.Popen(  # nosec B603,B607 - fixed argv list, no shell invocation
             ["osascript", "-e", script],
         )
         return True
