@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeAlias
 
-
 CACHE_DIR = Path.home() / ".cache" / "askfind"
 CACHE_FILE = CACHE_DIR / "search_cache.json"
 CACHE_VERSION = 1

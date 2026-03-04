@@ -13,7 +13,6 @@ from askfind.search.cache import CACHE_DIR, compute_root_fingerprint
 from askfind.search.filters import SearchFilters
 from askfind.search.walker import walk_and_filter
 
-
 INDEX_VERSION = 1
 INDEX_DIR = CACHE_DIR / "indexes"
 

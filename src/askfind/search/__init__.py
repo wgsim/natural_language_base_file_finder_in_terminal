@@ -1,9 +1,7 @@
 """Search engine for askfind."""
 
-from askfind.search.filters import SearchFilters
-from askfind.search.walker import walk_and_filter
-from askfind.search.reranker import rerank_results
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
+from askfind.search.filters import SearchFilters
 from askfind.search.index import (
     IndexBuildResult,
     IndexClearResult,
@@ -15,6 +13,8 @@ from askfind.search.index import (
     query_index,
     update_index,
 )
+from askfind.search.reranker import rerank_results
+from askfind.search.walker import walk_and_filter
 
 __all__ = [
     "SearchFilters",

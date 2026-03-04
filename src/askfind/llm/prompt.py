@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 FILTER_SCHEMA = """\
 {
@@ -35,7 +35,7 @@ FILTER_SCHEMA = """\
 
 
 def build_system_prompt() -> str:
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC")
     return f"""\
 You are a file search assistant. Given a natural language query about finding files, \
 extract structured search filters as a JSON object.

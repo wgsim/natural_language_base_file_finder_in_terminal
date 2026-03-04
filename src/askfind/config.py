@@ -10,7 +10,6 @@ from pathlib import Path
 import keyring
 import tomli_w
 
-
 SERVICE_NAME = "askfind"
 CONFIG_DIR = Path.home() / ".config" / "askfind"
 CONFIG_FILE = CONFIG_DIR / "config.toml"
