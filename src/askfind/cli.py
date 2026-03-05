@@ -16,7 +16,7 @@ from askfind.config import Config, get_api_key, get_config_path, set_api_key
 from askfind.config_reader import ConfigReader, RuntimeConfig
 from askfind.llm.client import LLMClient
 from askfind.llm.fallback import has_meaningful_filters, parse_query_fallback
-from askfind.llm.mode import DEFAULT_LLM_MODE, LLMMode, decide_llm_usage, normalize_llm_mode
+from askfind.llm.mode import decide_llm_usage
 from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import setup_logging, get_logger
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint

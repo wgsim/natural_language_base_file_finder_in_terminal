@@ -15,16 +15,19 @@ from askfind.config import Config, get_api_key
 from askfind.config_reader import ConfigReader
 from askfind.interactive.commands import copy_content, copy_path, open_in_editor, preview
 from askfind.llm.client import LLMClient
-from askfind.llm.mode import DEFAULT_LLM_MODE, normalize_llm_mode
+from askfind.llm.fallback import has_meaningful_filters, parse_query_fallback
+from askfind.llm.mode import DEFAULT_LLM_MODE, decide_llm_usage, normalize_llm_mode
+from askfind.llm.parser import parse_llm_response
 from askfind.logging_config import get_logger
 from askfind.output.formatter import FileResult, human_size
 from askfind.query_processor import QueryProcessor, QueryProcessorStats
 from askfind.search.cache import SearchCache, build_search_cache_key, compute_root_fingerprint
-from askfind.search.filters import DEFAULT_SIMILARITY_THRESHOLD, SearchFilters
+from askfind.search.filters import DEFAULT_SIMILARITY_THRESHOLD
 from askfind.search.walker import walk_and_filter
 
 console = Console()
 logger = get_logger(__name__)
+_LEGACY_TEST_PATCH_POINTS = (parse_query_fallback, has_meaningful_filters, parse_llm_response)
 
 HELP_TEXT = """\
 [bold]Available commands:[/bold]
@@ -131,8 +134,37 @@ class InteractiveSession:
             open_in_editor(result, self.config.editor)
         return True
 
+    def _ensure_runtime_state(self) -> None:
+        """Populate attributes for compatibility with tests that bypass __init__."""
+        if not hasattr(self, "_reader"):
+            self._reader = ConfigReader(self.config)
+
+        if not hasattr(self, "offline_mode"):
+            self.offline_mode = self._reader.get_bool("offline_mode", default=False)
+
+        if not hasattr(self, "llm_mode"):
+            configured_mode = self._reader.get_llm_mode(default=DEFAULT_LLM_MODE)
+            self.llm_mode = "off" if self.offline_mode else configured_mode
+        else:
+            self.llm_mode = normalize_llm_mode(self.llm_mode, default=DEFAULT_LLM_MODE)
+            if self.offline_mode:
+                self.llm_mode = "off"
+
+        if not hasattr(self, "client"):
+            self.client = None
+
+        if not hasattr(self, "_query_processor"):
+            self._query_processor = QueryProcessor(
+                llm_mode=self.llm_mode,
+                offline_mode=self.offline_mode,
+            )
+
+        if not hasattr(self, "_query_stats"):
+            self._query_stats = QueryProcessorStats()
+
     def _search(self, query: str) -> None:
         try:
+            self._ensure_runtime_state()
             # Use cached ConfigReader for type-safe config access
             reader = self._reader
             respect_ignore_files = reader.get_bool("respect_ignore_files", default=True)
@@ -145,25 +177,18 @@ class InteractiveSession:
             model = reader.get_str("model", default="")
             base_url = reader.get_str("base_url", default="")
 
-            # Process query using QueryProcessor
-            query_result = self._query_processor.process(
-                query,
-                client=self._get_or_create_client(base_url, model),
-                stats=self._query_stats,
+            # Pre-compute parser decision for cache lookup without triggering LLM calls.
+            fallback_filters = parse_query_fallback(query)
+            llm_decision = decide_llm_usage(
+                query=query,
+                fallback_filters=fallback_filters,
+                llm_mode=self.llm_mode,
             )
-
-            if query_result.is_rejected:
-                console.print(f"[red]{query_result.error_message}[/red]")
-                self.results = []
-                return
-
-            filters = query_result.filters
-            filters.similarity_threshold = similarity_threshold
+            use_llm_for_cache = llm_decision.llm_called
 
             # Build cache key based on query decision
-            use_llm = self._query_processor.llm_mode != "off" and not query_result.used_fallback
-            cache_mode = f"{self.llm_mode}:{'llm' if use_llm else 'fallback'}"
-            if use_llm:
+            cache_mode = f"{self.llm_mode}:{llm_decision.decision}"
+            if use_llm_for_cache:
                 cache_model = f"{model}::llm_mode={cache_mode}"
                 cache_base_url = base_url
             else:
@@ -211,6 +236,18 @@ class InteractiveSession:
                 self.results = []
 
             if cached_paths is None:
+                query_result = self._query_processor.process(
+                    query,
+                    client=self._get_or_create_client(base_url, model),
+                    stats=self._query_stats,
+                )
+                if query_result.is_rejected:
+                    console.print(f"[red]{query_result.error_message}[/red]")
+                    self.results = []
+                    return
+
+                filters = query_result.filters
+                filters.similarity_threshold = similarity_threshold
                 paths = list(
                     walk_and_filter(
                         self.root,

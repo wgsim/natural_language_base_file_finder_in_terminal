@@ -35,6 +35,7 @@ class QueryResult:
     """
 
     filters: SearchFilters
+    used_llm: bool = False
     used_fallback: bool = False
     fallback_reason: str | None = None
     error_message: str | None = None
@@ -94,6 +95,7 @@ class QueryProcessor:
             llm_mode: LLM call policy ("always", "auto", "off")
             offline_mode: Whether to skip all network calls
         """
+        self.offline_mode = offline_mode
         self.llm_mode = "off" if offline_mode else llm_mode
 
     def process(
@@ -165,11 +167,13 @@ class QueryProcessor:
             if has_meaningful_filters(fallback_filters):
                 return QueryResult(
                     filters=fallback_filters,
+                    used_llm=False,
                     used_fallback=True,
                     fallback_reason="no_client",
                 )
             return QueryResult(
                 filters=SearchFilters(),
+                used_llm=False,
                 error_message="No LLM client available and query too broad for fallback.",
             )
 
@@ -188,11 +192,12 @@ class QueryProcessor:
                         stats.record_fallback("empty_llm_filters")
                     return QueryResult(
                         filters=fallback_filters,
+                        used_llm=False,
                         used_fallback=True,
                         fallback_reason="empty_llm_filters",
                     )
 
-            return QueryResult(filters=filters)
+            return QueryResult(filters=filters, used_llm=True)
 
         except httpx.HTTPError as exc:
             if has_meaningful_filters(fallback_filters):
@@ -201,6 +206,7 @@ class QueryProcessor:
                     stats.record_fallback(fallback_reason)
                 return QueryResult(
                     filters=fallback_filters,
+                    used_llm=False,
                     used_fallback=True,
                     fallback_reason=fallback_reason,
                 )
@@ -213,6 +219,7 @@ class QueryProcessor:
                     stats.record_fallback("invalid_llm_response")
                 return QueryResult(
                     filters=fallback_filters,
+                    used_llm=False,
                     used_fallback=True,
                     fallback_reason="invalid_llm_response",
                 )
@@ -220,6 +227,8 @@ class QueryProcessor:
 
     def _get_broad_query_error_message(self) -> str:
         """Get appropriate error message for broad query based on mode."""
+        if self.offline_mode:
+            return "Error: --offline query is too broad; add at least one concrete filter."
         if self.llm_mode == "off":
             return "Error: --llm-mode off query is too broad; add at least one concrete filter."
         return "Error: Query is too broad for heuristic mode; use --llm-mode always."

@@ -8,8 +8,6 @@ import pytest
 
 from askfind.config import Config
 from askfind.config_reader import ConfigReader, RuntimeConfig
-from askfind.llm.mode import DEFAULT_LLM_MODE
-from askfind.search.filters import DEFAULT_SIMILARITY_THRESHOLD
 
 
 class TestConfigReader:
