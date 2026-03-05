@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import httpx
 import pytest
@@ -76,7 +76,7 @@ class TestQueryProcessor:
         result = processor.process("find Python files")
 
         assert result.is_rejected is False
-        assert result.filters.ext == ["py"]
+        assert result.filters.ext == [".py"]
 
     def test_process_with_llm_mode_always(self) -> None:
         processor = QueryProcessor(llm_mode="always")
@@ -138,7 +138,7 @@ class TestQueryProcessor:
         with pytest.raises(httpx.HTTPError):
             processor.process("find files", client=mock_client)
 
-    def test_process_with_no_client_falls_back(self) -> None:
+    def test_process_with_no_client_uses_heuristic_in_auto_mode(self) -> None:
         processor = QueryProcessor(llm_mode="auto")
 
         result = processor.process(
@@ -146,8 +146,8 @@ class TestQueryProcessor:
             client=None,
         )
 
-        assert result.used_fallback is True
-        assert result.fallback_reason == "no_client"
+        assert result.used_fallback is False
+        assert result.fallback_reason is None
 
     def test_process_with_no_client_no_fallback_rejects(self) -> None:
         processor = QueryProcessor(llm_mode="always")
@@ -166,7 +166,7 @@ class TestQueryProcessor:
         result = processor.process("find Python files with name test")
 
         assert result.used_fallback is False
-        assert result.filters.ext == ["py"]
+        assert result.filters.ext == [".py"]
 
     def test_auto_mode_ambiguous_query_uses_llm(self) -> None:
         processor = QueryProcessor(llm_mode="auto")
