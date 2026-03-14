@@ -88,12 +88,12 @@ No known vulnerabilities found
 
 ## Security Audit Results
 
-Last comprehensive audit: 2025-02-06
+This section is a historical snapshot from an earlier release cycle.
+Validate the current status with CI (`pip-audit`) and the release checklist
+before publishing a new release.
+
+- Historical snapshot date: 2025-02-06
 - **Critical issues:** 0
 - **High issues:** 0
 - **Medium issues:** 0
-- **Low issues:** 2 (tracked in REMAINING_ISSUES.md)
-
-Security rating: **9.5/10**
-
-For detailed audit findings, see `REMAINING_ISSUES.md`.
+- **Low issues:** 2 (tracked in `REMAINING_ISSUES.md` at the time)

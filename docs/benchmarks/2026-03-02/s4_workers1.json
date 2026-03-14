@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 1,
+  "generated_at": "2026-03-02T08:06:22+00:00",
+  "root": "<synthetic-root:askfind_bench_synth>",
+  "parameters": {
+    "repeats": 3,
+    "max_results": 0,
+    "workers": 1,
+    "follow_symlinks": false,
+    "include_binary": false
+  },
+  "results": [
+    {
+      "scenario": "all-files",
+      "runs": 3,
+      "min_s": 0.06026,
+      "median_s": 0.062445,
+      "mean_s": 0.06651,
+      "max_s": 0.076825,
+      "result_count": 2100
+    },
+    {
+      "scenario": "python-files",
+      "runs": 3,
+      "min_s": 0.039878,
+      "median_s": 0.040838,
+      "mean_s": 0.040808,
+      "max_s": 0.041708,
+      "result_count": 1500
+    },
+    {
+      "scenario": "todo-content",
+      "runs": 3,
+      "min_s": 0.094257,
+      "median_s": 0.094899,
+      "mean_s": 0.096873,
+      "max_s": 0.101463,
+      "result_count": 600
+    }
+  ]
+}

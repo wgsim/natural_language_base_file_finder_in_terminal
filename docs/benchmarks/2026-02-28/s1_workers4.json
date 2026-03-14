@@ -1,0 +1,41 @@
+{
+  "benchmark_version": 1,
+  "generated_at": "2026-02-28T08:44:55+00:00",
+  "root": "<repo-root>",
+  "parameters": {
+    "repeats": 1,
+    "max_results": 0,
+    "workers": 4,
+    "follow_symlinks": false,
+    "include_binary": false
+  },
+  "results": [
+    {
+      "scenario": "all-files",
+      "runs": 1,
+      "min_s": 0.060649,
+      "median_s": 0.060649,
+      "mean_s": 0.060649,
+      "max_s": 0.060649,
+      "result_count": 75
+    },
+    {
+      "scenario": "python-files",
+      "runs": 1,
+      "min_s": 0.057077,
+      "median_s": 0.057077,
+      "mean_s": 0.057077,
+      "max_s": 0.057077,
+      "result_count": 47
+    },
+    {
+      "scenario": "todo-content",
+      "runs": 1,
+      "min_s": 0.062378,
+      "median_s": 0.062378,
+      "mean_s": 0.062378,
+      "max_s": 0.062378,
+      "result_count": 10
+    }
+  ]
+}
