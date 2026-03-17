@@ -236,6 +236,13 @@ class TestParseLlmResponse:
         assert filters.loc == "10"
         assert filters.complexity == "<3"
 
+    def test_accepts_similarity_threshold_with_other_filters(self):
+        raw = '{"similar": "src/auth.py", "similarity_threshold": 0.8, "ext": [".py"]}'
+        filters = parse_llm_response(raw)
+        assert filters.similar == "src/auth.py"
+        assert filters.similarity_threshold == 0.8
+        assert filters.ext == [".py"]
+
     def test_rejects_out_of_range_metric_and_absolute_year_values(self):
         raw = '{"loc": "1000001", "mod_after": "1969-12-31", "mod_before": "3000-01-01"}'
         filters = parse_llm_response(raw)

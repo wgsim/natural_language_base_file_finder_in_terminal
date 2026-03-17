@@ -7,7 +7,7 @@ import re
 from dataclasses import fields
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TypeAlias
+from typing import Any, TypeAlias, cast
 
 from askfind.search.filters import SearchFilters, parse_mod_datetime, parse_size, parse_time_delta
 
@@ -123,7 +123,7 @@ def _sanitize_relative_path_reference(value: JSONValue) -> str | None:
 
 # Validated value types that can be assigned to SearchFilters fields
 ValidatedValue: TypeAlias = (
-    str | list[str]  # Most fields are string or list of strings
+    str | list[str] | float
 )
 
 
@@ -139,12 +139,12 @@ def _validate_and_sanitize_value(key: str, value: JSONValue) -> ValidatedValue |
         if not isinstance(value, list):
             return None
         # Limit list length and term length
-        value = value[:_MAX_LIST_LENGTH]
-        value = [str(v).strip()[:_MAX_TERM_LENGTH] for v in value if v]
-        value = [v for v in value if v]
-        if not value:
+        items = value[:_MAX_LIST_LENGTH]
+        normalized_items = [str(v).strip()[:_MAX_TERM_LENGTH] for v in items if v]
+        normalized_items = [v for v in normalized_items if v]
+        if not normalized_items:
             return None
-        return value
+        return normalized_items
 
     # Sanitize path fields to prevent directory traversal
     if key in ("path", "not_path", "similar"):
@@ -198,6 +198,14 @@ def _validate_and_sanitize_value(key: str, value: JSONValue) -> ValidatedValue |
             return None
         return _validate_mod_absolute_value(value)
 
+    if key == "similarity_threshold":
+        if not isinstance(value, (int, float)) or isinstance(value, bool):
+            return None
+        threshold = float(value)
+        if threshold < 0.0 or threshold > 1.0:
+            return None
+        return threshold
+
     # Unknown field type - reject
     return None
 
@@ -218,7 +226,7 @@ def parse_llm_response(raw: str) -> SearchFilters:
     if not isinstance(data, dict):
         return SearchFilters()
     valid_names = {f.name for f in fields(SearchFilters)}
-    kwargs = {}
+    kwargs: dict[str, ValidatedValue] = {}
     for key, value in data.items():
         if key not in valid_names:
             continue
@@ -226,7 +234,7 @@ def parse_llm_response(raw: str) -> SearchFilters:
         sanitized = _validate_and_sanitize_value(key, value)
         if sanitized is not None:
             kwargs[key] = sanitized
-    return SearchFilters(**kwargs)
+    return SearchFilters(**cast(dict[str, Any], kwargs))
 
 
 def _extract_json(raw: str) -> str | None:
