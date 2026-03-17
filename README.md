@@ -53,6 +53,40 @@ Under the hood, `askfind` uses an LLM to instantly translate your natural langua
 
 Make sure you have Python 3.12+ installed.
 
+#### Recommended for end users: install from PyPI with `pipx`
+
+Once `askfind` is published to PyPI, install it in an isolated tool environment:
+
+```bash
+pipx install askfind
+askfind --help
+```
+
+If `pipx` is installed but `askfind` is not found on your `PATH`, run:
+
+```bash
+pipx ensurepath
+```
+
+#### Alternative: install from PyPI with `uv tool`
+
+If you use `uv`, you can install the CLI without manually activating a virtual environment:
+
+```bash
+uv tool install askfind
+askfind --help
+```
+
+If `uv` warns that its tool bin directory is not on your `PATH`, run:
+
+```bash
+uv tool update-shell
+```
+
+#### Development or unreleased source install
+
+If you are working directly from this repository before a PyPI release is available:
+
 ```bash
 git clone https://github.com/wgsim/natural_language_base_file_finder_in_terminal.git
 cd natural_language_base_file_finder_in_terminal
@@ -114,6 +148,12 @@ askfind config set parallel_workers 4
 askfind config set base_url "http://localhost:11434/v1"
 askfind config set model "llama3"
 ```
+
+## 📦 Packaging Notes
+
+- End-user installation should target PyPI via `pipx install askfind` as the primary path.
+- `uv tool install askfind` is a supported alternative for users already on `uv`.
+- The source install flow (`pip install -e ".[dev]"`) is intended for contributors and local development, not for general end users.
 
 ## 🤝 Contributing
 

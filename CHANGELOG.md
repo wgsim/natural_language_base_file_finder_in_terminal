@@ -2,6 +2,23 @@
 
 All notable changes to this project are documented in this file.
 
+## [0.1.21] - 2026-03-17
+
+### Added
+- Added automated PyPI publishing to the release workflow:
+  - release tags now build checked distribution artifacts and publish them using `PYPI_API_TOKEN`.
+
+### Changed
+- Updated end-user installation docs to prefer PyPI tool installs:
+  - primary path is `pipx install askfind`
+  - alternative path is `uv tool install askfind`
+  - editable source install is now clearly positioned as development-only
+- Added PyPI readiness checks to the release checklist, including stale artifact cleanup before build.
+- Added pinned dev packaging tools for reproducible local release verification:
+  - `build==1.4.0`
+  - `twine==6.2.0`
+- Updated package version metadata to `0.1.21`.
+
 ## [0.1.20] - 2026-03-03
 
 ### Added
