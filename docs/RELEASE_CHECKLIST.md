@@ -8,6 +8,26 @@ Use this checklist before tagging and publishing a release.
 - [ ] `./.githooks/pre-push`
 - [ ] CI workflow green on `main`
 
+## PyPI Readiness
+
+- [ ] Confirm package name, version, `requires-python`, and console entry point in `pyproject.toml`
+- [ ] Confirm README installation guidance matches the intended public install path:
+  - primary: `pipx install askfind`
+  - alternative: `uv tool install askfind`
+  - source install clearly marked as development-only
+- [ ] Build fresh distribution artifacts locally:
+  - clean old `dist/`, `build/`, and stale `src/*.egg-info` first
+  - `python -m build`
+  - `python -m twine check dist/*`
+- [ ] Smoke-test installation from a built artifact or TestPyPI in an isolated environment before publishing
+- [ ] Verify PyPI publishing credentials are ready:
+  - trusted publisher configured in PyPI, or
+  - PyPI API token available for manual upload
+- [ ] Decide publish path before tagging:
+  - manual publish (`twine upload dist/*` or `uv publish`)
+  - or extend `release.yml` with an authenticated publish step
+- [ ] Confirm package discovery on PyPI/TestPyPI after publish and verify `pipx install askfind` works end-to-end
+
 ## Versioning
 
 - [ ] `pyproject.toml` version updated

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "askfind"
-version = "0.1.20"
+version = "0.1.21"
 description = "Natural language file finder for the terminal"
 readme = "README.md"
 license = "MIT"
@@ -42,7 +42,9 @@ Changelog = "https://github.com/wgsim/natural_language_base_file_finder_in_termi
 
 [project.optional-dependencies]
 dev = [
+    "build==1.4.0",
     "mypy==1.11.2",
+    "twine==6.2.0",
     "pytest==9.0.2",
     "pytest-cov==7.0.0",
     "ruff==0.6.9",
